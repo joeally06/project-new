@@ -93,44 +93,26 @@ export const AdminHallOfFameNominations: React.FC = () => {
     setSearchTerm(e.target.value);
   };
 
-  const handleStatusChange = async (nominationId: string, newStatus: string) => {
+  const handleStatusUpdate = async (nominationId: string, newStatus: string) => {
+    setUpdatingStatus(nominationId);
     try {
-      setUpdatingStatus(nominationId);
-
-      const { data: existingNomination, error: checkError } = await supabase
-        .from('hall_of_fame_nominations')
-        .select('id, status')
-        .eq('id', nominationId)
-        .single();
-
-      if (checkError) {
-        throw new Error('Failed to verify nomination');
+      // Use Edge Function for secure status update
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-nomination-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+        },
+        body: JSON.stringify({ id: nominationId, status: newStatus })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update status');
       }
-
-      if (!existingNomination) {
-        throw new Error('Nomination not found');
-      }
-
-      const { error: updateError } = await supabase
-        .from('hall_of_fame_nominations')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', nominationId);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setNominations(prev => prev.map(nom => 
-        nom.id === nominationId ? { ...nom, status: newStatus } : nom
-      ));
-
+      setNominations(prev => prev.map(nom => nom.id === nominationId ? { ...nom, status: newStatus } : nom));
       if (selectedNomination?.id === nominationId) {
         setSelectedNomination(prev => prev ? { ...prev, status: newStatus } : null);
       }
-
     } catch (error: any) {
       console.error('Error updating status:', error);
       alert(`Failed to update status: ${error.message}`);
@@ -141,15 +123,20 @@ export const AdminHallOfFameNominations: React.FC = () => {
 
   const handleDelete = async (nominationId: string) => {
     if (!confirm('Are you sure you want to delete this nomination?')) return;
-
     try {
-      const { error } = await supabase
-        .from('hall_of_fame_nominations')
-        .delete()
-        .eq('id', nominationId);
-
-      if (error) throw error;
-
+      // Use Edge Function for secure deletion
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-nomination`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+        },
+        body: JSON.stringify({ id: nominationId })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete nomination');
+      }
       fetchNominations();
     } catch (error: any) {
       console.error('Error deleting nomination:', error);
@@ -480,7 +467,7 @@ export const AdminHallOfFameNominations: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <select
                           value={nomination.status}
-                          onChange={(e) => handleStatusChange(nomination.id, e.target.value)}
+                          onChange={(e) => handleStatusUpdate(nomination.id, e.target.value)}
                           disabled={updatingStatus === nomination.id}
                           className={`text-sm rounded-md border-gray-300 focus:border-primary focus:ring-primary ${
                             updatingStatus === nomination.id ? 'opacity-50 cursor-not-allowed' : ''
@@ -586,7 +573,7 @@ export const AdminHallOfFameNominations: React.FC = () => {
                   <h4 className="font-medium text-gray-500">Status</h4>
                   <select
                     value={selectedNomination.status}
-                    onChange={(e) => handleStatusChange(selectedNomination.id, e.target.value)}
+                    onChange={(e) => handleStatusUpdate(selectedNomination.id, e.target.value)}
                     disabled={updatingStatus === selectedNomination.id}
                     className={`mt-1 block w-full rounded-md border-gray-300 focus:ring-primary focus:border-primary ${
                       updatingStatus === selectedNomination.id ? 'opacity-50 cursor-not-allowed' : ''

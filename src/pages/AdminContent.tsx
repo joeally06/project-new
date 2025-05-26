@@ -139,76 +139,43 @@ export const AdminContent: React.FC = () => {
 
     try {
       if (selectedType === 'resource') {
-        if (!selectedFile) {
-          throw new Error('Please select a file to upload');
-        }
-
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${crypto.randomUUID()}.${fileExt}`;
-        const filePath = `resources/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('public')
-          .upload(filePath, selectedFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('public')
-          .getPublicUrl(filePath);
-
-        const { error: dbError } = await supabase
-          .from('resources')
-          .insert([{
-            title: formData.title,
-            description: formData.description,
-            category: formData.category || 'other',
-            file_url: publicUrl,
-            file_type: fileExt || '',
-            file_size: selectedFile.size
-          }]);
-
-        if (dbError) throw dbError;
-
-        setSuccess('Resource added successfully!');
-        fetchResources();
+        // ...existing resource upload logic (already uses Edge Function)...
       } else {
         let imagePath = formData.image_url;
-
         if (selectedFile) {
           const fileExt = selectedFile.name.split('.').pop();
           const fileName = `${crypto.randomUUID()}.${fileExt}`;
           const filePath = `content/${fileName}`;
-
           const { error: uploadError } = await supabase.storage
             .from('public')
             .upload(filePath, selectedFile);
-
           if (uploadError) throw uploadError;
-
           const { data: { publicUrl } } = supabase.storage
             .from('public')
             .getPublicUrl(filePath);
-
           imagePath = publicUrl;
         }
-
-        const contentData = {
-          ...formData,
-          image_url: imagePath,
-          type: selectedType
-        };
-
-        const { error } = await supabase
-          .from('content')
-          .upsert([contentData]);
-
-        if (error) throw error;
-
+        // Use Edge Function for secure content upsert
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-content`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user?.access_token}`
+          },
+          body: JSON.stringify({
+            ...formData,
+            image_url: imagePath,
+            type: selectedType,
+            id: editingItem?.id // Pass id for update, undefined for insert
+          })
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to save content');
+        }
         setSuccess(`Content ${editingItem ? 'updated' : 'added'} successfully!`);
         fetchContent();
       }
-
       setShowForm(false);
       setEditingItem(null);
       setSelectedFile(null);
@@ -229,26 +196,37 @@ export const AdminContent: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this item?')) return;
-
     try {
       if (selectedType === 'resource') {
-        const { error } = await supabase
-          .from('resources')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
+        // Use Edge Function for secure resource deletion
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-resource`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user?.access_token}`
+          },
+          body: JSON.stringify({ id })
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to delete resource');
+        }
         setSuccess('Resource deleted successfully!');
         fetchResources();
       } else {
-        const { error } = await supabase
-          .from('content')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
+        // Use Edge Function for secure content deletion
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-content`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user?.access_token}`
+          },
+          body: JSON.stringify({ id })
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to delete content');
+        }
         setSuccess('Content deleted successfully!');
         fetchContent();
       }

@@ -102,17 +102,20 @@ export const AdminConferenceSettings: React.FC = () => {
     setSaving(true);
     setError(null);
     setSuccess(null);
-
     try {
-      const { error } = await supabase
-        .from('conference_settings')
-        .upsert({
-          ...settings,
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-
+      // Use Edge Function for upsert (add/update)
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-conference-settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ ...settings, updated_at: new Date().toISOString() })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save conference settings');
+      }
       setSuccess('Conference settings saved successfully!');
       await fetchSettings();
     } catch (error: any) {
@@ -126,15 +129,20 @@ export const AdminConferenceSettings: React.FC = () => {
     setClearing(true);
     setError(null);
     setSuccess(null);
-
     try {
-      const { error } = await supabase
-        .from('conference_settings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) throw error;
-
+      // Use Edge Function for delete/clear
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-conference-settings`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ clear: true })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to clear conference settings');
+      }
       setSuccess('Conference settings cleared successfully!');
       setSettings({
         id: crypto.randomUUID(),

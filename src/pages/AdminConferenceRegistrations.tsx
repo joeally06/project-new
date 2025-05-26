@@ -16,6 +16,7 @@ const AdminConferenceRegistrations: React.FC = () => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
@@ -23,9 +24,30 @@ const AdminConferenceRegistrations: React.FC = () => {
     setSearchTerm(e.target.value);
   };
 
-  const handleClearTable = () => {
+  // Refactor: Use Edge Function for clearing all conference registrations
+  const handleClearTable = async () => {
     setClearing(true);
-    // Implementation details...
+    setError('');
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-conference-registrations`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ clear: true })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to clear conference registrations');
+      }
+      setSuccess('All conference registrations cleared successfully!');
+      fetchRegistrations();
+    } catch (error: any) {
+      setError(`Failed to clear conference registrations: ${error.message}`);
+    } finally {
+      setClearing(false);
+    }
   };
 
   const exportToCSV = () => {

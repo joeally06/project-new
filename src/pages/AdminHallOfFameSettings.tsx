@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, MapPin, DollarSign, Clock, Save, AlertCircle, ArrowLeft, Trash2, Archive } from 'lucide-react';
+import { Clock, Save, AlertCircle, ArrowLeft, Trash2, Archive } from 'lucide-react';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useAuth } from '../context/AuthContext';
 
@@ -104,17 +104,18 @@ export const AdminHallOfFameSettings: React.FC = () => {
     setSuccess(null);
 
     try {
-      const { error } = await supabase
-        .from('hall_of_fame_settings')
-        .upsert({
-          ...settings,
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) {
-        throw error;
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ ...settings, updated_at: new Date().toISOString() })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save hall of fame settings');
       }
-
       setSuccess('Hall of Fame settings saved successfully!');
       await fetchSettings();
     } catch (error: any) {
@@ -130,16 +131,22 @@ export const AdminHallOfFameSettings: React.FC = () => {
     setSuccess(null);
 
     try {
-      const { error } = await supabase
-        .from('hall_of_fame_settings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) throw error;
-
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-settings`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ clear: true })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to clear hall of fame settings');
+      }
       setSuccess('Hall of Fame settings cleared successfully!');
+      const uuid = await fetchUUID();
       setSettings({
-        id: await fetchUUID(),
+        id: uuid,
         name: '',
         start_date: '',
         end_date: '',

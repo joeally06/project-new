@@ -69,12 +69,19 @@ export const AdminMemberships: React.FC = () => {
 
   const handleStatusChange = async (applicationId: string, newStatus: 'approved' | 'rejected') => {
     try {
-      const { error } = await supabase
-        .from('membership_applications')
-        .update({ status: newStatus })
-        .eq('id', applicationId);
-
-      if (error) throw error;
+      // Use Edge Function for secure status update
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-membership-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+        },
+        body: JSON.stringify({ id: applicationId, status: newStatus })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update application status');
+      }
 
       setApplications(prev => 
         prev.map(app => 

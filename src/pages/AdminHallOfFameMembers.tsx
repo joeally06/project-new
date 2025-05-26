@@ -110,11 +110,19 @@ export const AdminHallOfFameMembers: React.FC = () => {
     setSuccess(null);
 
     try {
-      const { error } = await supabase
-        .from('hall_of_fame_members')
-        .insert([formData]);
-
-      if (error) throw error;
+      // Use Edge Function for secure member creation
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+        },
+        body: JSON.stringify(formData)
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add member');
+      }
 
       setSuccess('Member added successfully!');
       setShowForm(false);
@@ -124,10 +132,7 @@ export const AdminHallOfFameMembers: React.FC = () => {
         role: '',
         organization: '',
         location: '',
-        contact_info: {
-          email: '',
-          phone: ''
-        },
+        contact_info: { email: '', phone: '' },
         image_url: '',
         website: '',
         notes: '',
@@ -147,12 +152,19 @@ export const AdminHallOfFameMembers: React.FC = () => {
     if (!confirm('Are you sure you want to delete this member?')) return;
 
     try {
-      const { error } = await supabase
-        .from('hall_of_fame_members')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      // Use Edge Function for secure member deletion
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-member`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+        },
+        body: JSON.stringify({ id })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete member');
+      }
 
       setSuccess('Member deleted successfully!');
       fetchMembers();

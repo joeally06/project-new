@@ -126,25 +126,29 @@ export const AdminBoardMembers: React.FC = () => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
-
     try {
       let imagePath = formData.image;
       if (selectedFile) {
         imagePath = await handleUpload();
       }
-
-      const id = editingMember ? editingMember.id : uuidv4();
-      const { error } = await supabase
-        .from('board_members')
-        .upsert({
-          id,
+      // Use Edge Function for upsert (add/update)
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-board-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({
           ...formData,
           image: imagePath,
+          id: editingMember ? editingMember.id : undefined,
           order: formData.order || members.length
-        });
-
-      if (error) throw error;
-
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save board member');
+      }
       setSuccess(`Board member ${editingMember ? 'updated' : 'added'} successfully!`);
       setShowForm(false);
       setEditingMember(null);
@@ -166,7 +170,6 @@ export const AdminBoardMembers: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this board member?')) return;
-
     try {
       // Get the member to delete their image if it exists
       const memberToDelete = members.find(m => m.id === id);
@@ -175,31 +178,29 @@ export const AdminBoardMembers: React.FC = () => {
         const response = await fetch(`/api/delete-image/${memberToDelete.image}`, {
           method: 'DELETE'
         });
-
         if (!response.ok) {
           console.error('Failed to delete image file');
         }
       }
-
-      const { error } = await supabase
-        .from('board_members')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
+      // Use Edge Function for delete
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-board-member`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ id })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete board member');
+      }
       setSuccess('Board member deleted successfully!');
       fetchMembers();
     } catch (error: any) {
       console.error('Error deleting board member:', error);
       setError(`Failed to delete board member: ${error.message}`);
     }
-  };
-
-  const handleEdit = (member: BoardMember) => {
-    setEditingMember(member);
-    setFormData(member);
-    setShowForm(true);
   };
 
   const handleMove = async (memberId: string, direction: 'up' | 'down') => {
@@ -210,30 +211,43 @@ export const AdminBoardMembers: React.FC = () => {
     ) {
       return;
     }
-
     const newMembers = [...members];
     const swapIndex = direction === 'up' ? memberIndex - 1 : memberIndex + 1;
-    
     // Swap order values
     const tempOrder = newMembers[memberIndex].order;
     newMembers[memberIndex].order = newMembers[swapIndex].order;
     newMembers[swapIndex].order = tempOrder;
-
     try {
-      const { error } = await supabase
-        .from('board_members')
-        .upsert([
-          newMembers[memberIndex],
-          newMembers[swapIndex]
-        ]);
-
-      if (error) throw error;
-
+      // Use Edge Function for reordering
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-board-member`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({
+          reorder: true,
+          members: [
+            { id: newMembers[memberIndex].id, order: newMembers[memberIndex].order },
+            { id: newMembers[swapIndex].id, order: newMembers[swapIndex].order }
+          ]
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to reorder board members');
+      }
       fetchMembers();
     } catch (error: any) {
       console.error('Error reordering board members:', error);
       setError(`Failed to reorder board members: ${error.message}`);
     }
+  };
+
+  const handleEdit = (member: BoardMember) => {
+    setEditingMember(member);
+    setFormData(member);
+    setShowForm(true);
   };
 
   if (loading) {

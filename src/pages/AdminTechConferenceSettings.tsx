@@ -168,47 +168,28 @@ export const AdminTechConferenceSettings: React.FC = () => {
     }));
   };
 
+  // Refactor: Use Edge Function for all tech conference settings mutations
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSuccess(null);
-
     let session;
     try {
-      // [SECURITY] Fetch UUID from Edge Function instead of using generateUUID()
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const uuidRes = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`);
-      const { uuid } = await uuidRes.json();
-      const id = uuid;
-
-      const sessionRes = await supabase.auth.getSession();
-      session = sessionRes.data.session;
-
-      const { error } = await supabase
-        .from('tech_conference_settings')
-        .upsert({
-          ...settings,
-          id: id,
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) {
-        await logAdminAction(session, {
-          action: 'save_settings',
-          outcome: 'failure',
-          error: error.message,
-          details: { settings }
-        });
-        throw error;
-      }
-
-      setSuccess('Tech conference settings saved successfully!');
-      await logAdminAction(session, {
-        action: 'save_settings',
-        outcome: 'success',
-        details: { settings }
+      // Use Edge Function for upsert (add/update)
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-tech-conference-settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ ...settings, updated_at: new Date().toISOString() })
       });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save tech conference settings');
+      }
+      setSuccess('Tech conference settings saved successfully!');
       await fetchSettings();
     } catch (error: any) {
       setError(`Failed to save tech conference settings: ${error.message}`);
@@ -223,22 +204,19 @@ export const AdminTechConferenceSettings: React.FC = () => {
     setSuccess(null);
     let session;
     try {
-      const sessionRes = await supabase.auth.getSession();
-      session = sessionRes.data.session;
-      const { error } = await supabase
-        .from('tech_conference_settings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) {
-        await logAdminAction(session, {
-          action: 'clear_settings',
-          outcome: 'failure',
-          error: error.message
-        });
-        throw error;
+      // Use Edge Function for delete/clear
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-tech-conference-settings`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.access_token}`
+        },
+        body: JSON.stringify({ clear: true })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to clear tech conference settings');
       }
-
       setSuccess('Tech conference settings cleared successfully!');
       setSettings({
         id: '',
@@ -252,10 +230,6 @@ export const AdminTechConferenceSettings: React.FC = () => {
         payment_instructions: '',
         description: '',
         is_active: true
-      });
-      await logAdminAction(session, {
-        action: 'clear_settings',
-        outcome: 'success'
       });
     } catch (error: any) {
       setError(`Failed to clear tech conference settings: ${error.message}`);
