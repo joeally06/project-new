@@ -30,13 +30,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       if (session?.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
+        // Use RPC function to get role without recursion
+        const { data: role, error: roleError } = await supabase.rpc(
+          'get_user_role',
+          { user_id: session.user.id }
+        );
+
+        if (roleError) {
+          console.error('Error fetching user role:', roleError);
+          setState({
+            user: { ...session.user, role: null },
+            loading: false,
+            error: roleError
+          });
+          return;
+        }
+
         setState({
-          user: { ...session.user, role: userData?.role },
+          user: { ...session.user, role },
           loading: false,
           error: null,
         });

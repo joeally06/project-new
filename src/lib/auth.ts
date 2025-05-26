@@ -16,11 +16,10 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
   if (!session?.user) throw new Error('No user returned from sign in');
 
   // Get user role from users table
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', session.user.id)
-    .single();
+  const { data: userData, error: userError } = await supabase.rpc(
+    'get_user_role',
+    { user_id: session.user.id }
+  );
 
   if (userError) throw userError;
   if (!userData) throw new Error('User role not found');
@@ -28,7 +27,7 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
   return {
     id: session.user.id,
     email: session.user.email!,
-    role: userData.role
+    role: userData
   };
 }
 
@@ -43,20 +42,19 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   if (error) throw error;
   if (!session?.user) return null;
 
-  // Get user role from users table
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', session.user.id)
-    .single();
+  // Get user role from users table using RPC function
+  const { data: role, error: roleError } = await supabase.rpc(
+    'get_user_role',
+    { user_id: session.user.id }
+  );
 
-  if (userError) throw userError;
-  if (!userData) return null;
+  if (roleError) throw roleError;
+  if (!role) return null;
 
   return {
     id: session.user.id,
     email: session.user.email!,
-    role: userData.role
+    role: role
   };
 }
 
