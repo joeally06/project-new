@@ -48,6 +48,8 @@ export const AdminUsers: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No active session');
 
+      console.log('Fetching users with session token:', session.access_token.substring(0, 10) + '...');
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user`,
         {
@@ -60,8 +62,9 @@ export const AdminUsers: React.FC = () => {
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch users');
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        console.error('Error response from admin-user function:', errorData);
+        throw new Error(errorData.error || `Failed to fetch users: ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -103,8 +106,13 @@ export const AdminUsers: React.FC = () => {
         }
       );
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(errorData.error || `Failed to create user: ${response.statusText}`);
+      }
+
       const result = await response.json();
-      if (!response.ok || !result.success) {
+      if (!result.success) {
         throw new Error(result.error || 'Failed to create user');
       }
 
@@ -140,8 +148,13 @@ export const AdminUsers: React.FC = () => {
         }
       );
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(errorData.error || `Failed to delete user: ${response.statusText}`);
+      }
+
       const result = await response.json();
-      if (!response.ok || !result.success) {
+      if (!result.success) {
         throw new Error(result.error || 'Failed to delete user');
       }
 
@@ -376,3 +389,5 @@ export const AdminUsers: React.FC = () => {
     </div>
   );
 };
+
+export default AdminUsers;
