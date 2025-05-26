@@ -1,11 +1,29 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
-import { sanitizeError } from '../../../src/lib/errors.ts';
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 const allowedOrigins = [
   'https://tapt.org',
   'https://admin.tapt.org',
   'http://localhost:5173'
 ];
+
+// Utility to sanitize error messages
+const sanitizeError = (error: any): string => {
+  const errorMap: Record<string, string> = {
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/wrong-password': 'Invalid login credentials.',
+    '23505': 'A record with this information already exists.',
+    '22P02': 'Invalid input format.',
+    '23503': 'Related record not found.',
+    '23514': 'Input does not meet requirements.',
+  };
+  
+  if (error && typeof error === 'object') {
+    if (error.code && errorMap[error.code]) return errorMap[error.code];
+    if (error.message && errorMap[error.message]) return errorMap[error.message];
+  }
+  
+  return 'An unexpected error occurred. Please try again.';
+};
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin') || '';
@@ -43,7 +61,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     // Basic validation (expand as needed)
-    if (!body.email || !body.first_name || !body.last_name) {
+    if (!body.email || !body.firstName || !body.lastName) {
       throw new Error('Missing required fields');
     }
 
