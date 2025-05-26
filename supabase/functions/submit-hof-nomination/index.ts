@@ -1,0 +1,218 @@
+import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+import { sanitizeError } from '../../../src/lib/errors.ts';
+
+const allowedOrigins = [
+  'https://tapt.org',
+  'https://admin.tapt.org',
+  'http://localhost:5173'
+];
+
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'"
+};
+
+interface NominationPayload {
+  nominee_first_name: string;
+  nominee_last_name: string;
+  district: string;
+  years_of_service: number;
+  is_tapt_member: boolean;
+  nomination_reason: string;
+  supervisor_first_name: string;
+  supervisor_last_name: string;
+  supervisor_email: string;
+  nominee_city: string;
+  region: string;
+}
+
+Deno.serve(async (req) => {
+  const origin = req.headers.get('Origin') || '';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    ...securityHeaders
+  };
+
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    // Verify request method
+    if (req.method !== 'POST') {
+      throw new Error('Method not allowed');
+    }
+
+    // Create Supabase client with service role key
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
+    // Get request body
+    const payload: NominationPayload = await req.json();
+
+    // Validate required fields
+    const requiredFields = [
+      'nominee_first_name',
+      'nominee_last_name',
+      'district',
+      'years_of_service',
+      'nomination_reason',
+      'supervisor_first_name',
+      'supervisor_last_name',
+      'supervisor_email',
+      'nominee_city',
+      'region'
+    ];
+
+    for (const field of requiredFields) {
+      if (!payload[field as keyof NominationPayload]) {
+        throw new Error(`Missing required field: ${field}`);
+      }
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(payload.supervisor_email)) {
+      throw new Error('Invalid email format');
+    }
+
+    // Validate years of service
+    if (payload.years_of_service < 0 || payload.years_of_service > 100) {
+      throw new Error('Invalid years of service');
+    }
+
+    // Validate nomination reason length
+    if (payload.nomination_reason.length > 500) {
+      throw new Error('Nomination reason exceeds maximum length of 500 characters');
+    }
+
+    // Check for rate limiting
+    const rateLimitKey = `nomination_${payload.supervisor_email}`;
+    const { data: rateLimit } = await supabaseAdmin
+      .from('rate_limits')
+      .select('count, last_attempt')
+      .eq('key', rateLimitKey)
+      .single();
+
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    if (rateLimit) {
+      if (new Date(rateLimit.last_attempt) > hourAgo && rateLimit.count >= 3) {
+        throw new Error('Rate limit exceeded. Please try again later.');
+      }
+
+      // Update rate limit
+      await supabaseAdmin
+        .from('rate_limits')
+        .upsert({
+          key: rateLimitKey,
+          count: new Date(rateLimit.last_attempt) > hourAgo ? rateLimit.count + 1 : 1,
+          last_attempt: now.toISOString()
+        });
+    } else {
+      // Create new rate limit entry
+      await supabaseAdmin
+        .from('rate_limits')
+        .insert({
+          key: rateLimitKey,
+          count: 1,
+          last_attempt: now.toISOString()
+        });
+    }
+
+    // Check if nomination period is open
+    const { data: settings, error: settingsError } = await supabaseAdmin
+      .from('hall_of_fame_settings')
+      .select('*')
+      .eq('is_active', true)
+      .single();
+
+    if (settingsError) {
+      throw new Error('Failed to check nomination period');
+    }
+
+    if (!settings) {
+      throw new Error('Nominations are not currently open');
+    }
+
+    const startDate = new Date(settings.start_date);
+    const endDate = new Date(settings.end_date);
+
+    if (now < startDate) {
+      throw new Error(`Nominations open on ${startDate.toLocaleDateString()}`);
+    }
+
+    if (now > endDate) {
+      throw new Error(`Nominations closed on ${endDate.toLocaleDateString()}`);
+    }
+
+    // Check for duplicate nominations
+    const { count: existingCount, error: duplicateError } = await supabaseAdmin
+      .from('hall_of_fame_nominations')
+      .select('*', { count: 'exact', head: true })
+      .eq('nominee_first_name', payload.nominee_first_name)
+      .eq('nominee_last_name', payload.nominee_last_name)
+      .eq('district', payload.district);
+
+    if (duplicateError) {
+      throw new Error('Failed to check for duplicate nominations');
+    }
+
+    if (existingCount && existingCount > 0) {
+      throw new Error('A nomination for this person already exists');
+    }
+
+    // Insert nomination
+    const { data, error } = await supabaseAdmin
+      .from('hall_of_fame_nominations')
+      .insert([{
+        ...payload,
+        status: 'pending'
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        data
+      }),
+      { 
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: sanitizeError(error),
+      }),
+      { 
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+});

@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #4720B7;
+  --secondary: #281A39;
+  --accent: #6247EA;
+  --light: #F5F5F7;
+  --dark: #1A1A1A;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--dark);
+  background-color: var(--light);
+  overflow-x: hidden;
+}
+
+.section {
+  @apply py-12 md:py-16 lg:py-20 px-4;
+}
+
+.container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.btn-primary {
+  @apply bg-primary hover:bg-primary/90 text-white font-medium py-2 px-6 rounded-md transition-all;
+}
+
+.btn-secondary {
+  @apply bg-white hover:bg-gray-50 text-primary border border-primary font-medium py-2 px-6 rounded-md transition-all;
+}
+
+.card {
+  @apply bg-white rounded-lg shadow-md overflow-hidden transition-all hover:shadow-lg;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply font-bold text-secondary;
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-in;
+}
+
+.slide-in-right {
+  animation: slideInRight 0.5s ease-out;
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(50px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-50px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

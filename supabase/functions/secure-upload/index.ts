@@ -1,0 +1,225 @@
+import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+import { sanitizeError } from '../../../src/lib/errors.ts';
+
+const allowedOrigins = [
+  'https://tapt.org',
+  'https://admin.tapt.org',
+  'http://localhost:5173'
+];
+
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'"
+};
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  ...securityHeaders
+};
+
+interface UploadRequest {
+  fileName: string;
+  contentType: string;
+  bucket: 'private' | 'public';
+  folder: string;
+}
+
+// Helper to log upload actions
+type UploadLogEntry = {
+  action: string;
+  user_id: string | null;
+  outcome: 'success' | 'failure';
+  error?: string;
+  bucket?: string | null;
+  folder?: string | null;
+  fileName?: string | null;
+  contentType?: string | null;
+  filePath?: string | null;
+};
+async function logUploadAction(supabaseAdmin: any, entry: UploadLogEntry) {
+  try {
+    await supabaseAdmin.from('upload_audit').insert([
+      {
+        action: entry.action,
+        user_id: entry.user_id,
+        outcome: entry.outcome,
+        error: entry.error || null,
+        bucket: entry.bucket || null,
+        folder: entry.folder || null,
+        file_name: entry.fileName || null,
+        content_type: entry.contentType || null,
+        file_path: entry.filePath || null,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    // TODO: Integrate alerting/monitoring for repeated failures
+  } catch (e) {
+    // Logging failure should not block main flow
+  }
+}
+
+Deno.serve(async (req) => {
+  const origin = req.headers.get('Origin') || '';
+  corsHeaders['Access-Control-Allow-Origin'] = allowedOrigins.includes(origin) ? origin : '';
+
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    if (req.method !== 'POST') {
+      throw new Error('Method not allowed');
+    }
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
+    // Verify authentication
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      throw new Error('Unauthorized');
+    }
+
+    const { fileName, contentType, bucket, folder }: UploadRequest = await req.json();
+
+    // Validate request
+    if (!fileName || !contentType || !bucket || !folder) {
+      throw new Error('Missing required fields');
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    if (!allowedTypes.includes(contentType)) {
+      throw new Error('Invalid file type');
+    }
+
+    // Enforce folder structure for private bucket
+    if (bucket === 'private') {
+      if (folder !== user.id) {
+        throw new Error('Invalid folder: must match your user ID');
+      }
+    }
+
+    // Optionally, restrict uploads to public bucket to only non-sensitive file types (add logic here if needed)
+
+    // Generate secure file path
+    const fileExt = fileName.split('.').pop();
+    const secureFileName = `${crypto.randomUUID()}.${fileExt}`;
+    const filePath = `${folder}/${secureFileName}`;
+
+    // Log upload attempt (for auditing)
+    console.log(`User ${user.id} uploading to bucket: ${bucket}, folder: ${folder}, file: ${fileName}, type: ${contentType}`);
+    await logUploadAction(supabaseAdmin, {
+      action: 'secure_upload',
+      user_id: user.id,
+      outcome: 'success',
+      bucket,
+      folder,
+      fileName,
+      contentType,
+      filePath
+    });
+
+    // Get signed URL for upload
+    const { data: signedUrl, error: signedUrlError } = await supabaseAdmin
+      .storage
+      .from(bucket)
+      .createSignedUploadUrl(filePath);
+
+    if (signedUrlError) {
+      throw signedUrlError;
+    }
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        signedUrl: signedUrl.signedUrl,
+        path: filePath
+      }),
+      { 
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+  } catch (error) {
+    // Sanitize error before returning to client
+    console.error('Error:', error.message);
+    try {
+      // Try to log the failed upload attempt
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
+      );
+      let userId = null, bucket = null, folder = null, fileName = null, contentType = null, filePath = null;
+      try {
+        const body = await req.json();
+        bucket = body.bucket || null;
+        folder = body.folder || null;
+        fileName = body.fileName || null;
+        contentType = body.contentType || null;
+        // filePath can't be reliably reconstructed on error
+      } catch {}
+      await logUploadAction(supabaseAdmin, {
+        action: 'secure_upload',
+        user_id: userId,
+        outcome: 'failure',
+        error: error.message,
+        bucket: bucket || undefined,
+        folder: folder || undefined,
+        fileName: fileName || undefined,
+        contentType: contentType || undefined,
+        filePath: filePath || undefined
+      });
+    } catch {}
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: sanitizeError(error),
+      }),
+      { 
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+});
