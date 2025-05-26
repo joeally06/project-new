@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
     user = authUser;
 
     if (authError || !user) {
+      console.error('Auth error:', authError);
       throw new Error('Unauthorized');
     }
 
