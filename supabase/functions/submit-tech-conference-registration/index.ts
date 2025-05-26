@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     'Content-Security-Policy': "default-src 'none'"
   };
   const corsHeaders = {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '',
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     ...securityHeaders
@@ -60,12 +60,49 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    // Basic validation (expand as needed)
-    if (!body.email || !body.firstName || !body.lastName) {
-      throw new Error('Missing required fields');
+    
+    // Enhanced validation
+    const errors = [];
+    if (!body.firstName || typeof body.firstName !== 'string') {
+      errors.push('First name is required');
     }
-
-    // Rate limiting and duplicate check can be added here
+    if (!body.lastName || typeof body.lastName !== 'string') {
+      errors.push('Last name is required');
+    }
+    if (!body.email || typeof body.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
+      errors.push('Valid email is required');
+    }
+    if (!body.schoolDistrict || typeof body.schoolDistrict !== 'string') {
+      errors.push('School district is required');
+    }
+    if (!body.streetAddress || typeof body.streetAddress !== 'string') {
+      errors.push('Street address is required');
+    }
+    if (!body.city || typeof body.city !== 'string') {
+      errors.push('City is required');
+    }
+    if (!body.state || typeof body.state !== 'string') {
+      errors.push('State is required');
+    }
+    if (!body.zipCode || typeof body.zipCode !== 'string') {
+      errors.push('ZIP code is required');
+    }
+    if (!body.phone || typeof body.phone !== 'string') {
+      errors.push('Phone number is required');
+    }
+    if (!body.totalAttendees || typeof body.totalAttendees !== 'number' || body.totalAttendees < 1) {
+      errors.push('Total attendees must be at least 1');
+    }
+    
+    if (errors.length > 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: errors.join(', ') }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
 
     // Insert main registration
     const { data: registration, error: regError } = await supabaseAdmin
@@ -90,16 +127,17 @@ Deno.serve(async (req) => {
 
     // Insert additional attendees if any
     if (body.additionalAttendees && body.additionalAttendees.length > 0) {
+      const attendeesToInsert = body.additionalAttendees.map((attendee: any) => ({
+        registration_id: registration.id,
+        first_name: attendee.firstName,
+        last_name: attendee.lastName,
+        email: attendee.email
+      }));
+
       const { error: attendeesError } = await supabaseAdmin
         .from('tech_conference_attendees')
-        .insert(
-          body.additionalAttendees.map((attendee: any) => ({
-            registration_id: registration.id,
-            first_name: attendee.firstName,
-            last_name: attendee.lastName,
-            email: attendee.email
-          }))
-        );
+        .insert(attendeesToInsert);
+
       if (attendeesError) throw attendeesError;
     }
 
@@ -108,6 +146,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
+    console.error('Error processing registration:', error);
     return new Response(
       JSON.stringify({ success: false, error: sanitizeError(error) }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

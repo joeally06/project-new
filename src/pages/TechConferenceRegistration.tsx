@@ -169,23 +169,55 @@ const TechConferenceRegistration: React.FC = () => {
     setFormStatus({});
 
     try {
-      // Refactored: Submit registration via Edge Function
+      // Get the Supabase URL from environment variables
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('SUPABASE_URL environment variable is not defined');
+      }
+
+      // Prepare the request payload
+      const payload = {
+        schoolDistrict: formData.schoolDistrict,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        streetAddress: formData.streetAddress,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        email: formData.email,
+        phone: formData.phone,
+        totalAttendees: formData.totalAttendees,
+        totalAmount,
+        additionalAttendees: formData.additionalAttendees
+      };
+
+      // Make the request to the Edge Function
       const response = await fetch(`${supabaseUrl}/functions/v1/submit-tech-conference-registration`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          totalAmount,
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify(payload)
       });
+
+      // Check if the request was successful
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to submit registration');
+      }
+
       const result = await response.json();
-      if (!result.success) throw new Error(result.error || 'Submission failed');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to submit registration');
+      }
 
       setFormStatus({
         success: true,
         message: 'Registration submitted successfully! Please mail your payment as instructed.'
       });
+      
+      // Reset form
       setFormData({
         schoolDistrict: '',
         firstName: '',
@@ -391,7 +423,7 @@ const TechConferenceRegistration: React.FC = () => {
                       </svg>
                     ) : (
                       <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                       </svg>
                     )}
                   </div>
