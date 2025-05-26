@@ -1,63 +1,62 @@
 // filepath: supabase/functions/admin-hof-settings/index.ts
-import { serve } from 'std/server';
+import express, { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 
-serve(async (req) => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const app = express();
+app.use(express.json());
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  next();
+});
+
+app.post('/', async (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 });
+  const { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at } = req.body;
+  if (!name || !start_date || !end_date) {
+    return res.status(400).json({ message: 'Missing required fields' });
   }
-
-  // Optionally, verify the JWT here for extra security
-
-  const method = req.method;
-  let body: any = {};
-  if (method !== 'GET') {
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(JSON.stringify({ message: 'Invalid JSON' }), { status: 400 });
-    }
+  const { error } = await supabase
+    .from('hall_of_fame_settings')
+    .upsert([
+      { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at }
+    ]);
+  if (error) {
+    return res.status(500).json({ message: error.message });
   }
+  return res.status(200).json({ success: true });
+});
 
-  try {
-    if (method === 'POST') {
-      // Upsert (add/update) Hall of Fame settings
-      const { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at } = body;
-      if (!name || !start_date || !end_date) {
-        return new Response(JSON.stringify({ message: 'Missing required fields' }), { status: 400 });
-      }
-      const { error } = await supabase
-        .from('hall_of_fame_settings')
-        .upsert([
-          { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at }
-        ]);
-      if (error) {
-        return new Response(JSON.stringify({ message: error.message }), { status: 500 });
-      }
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
-    }
-    if (method === 'DELETE') {
-      // Clear all Hall of Fame settings except the default/placeholder
-      const { clear } = body;
-      if (!clear) {
-        return new Response(JSON.stringify({ message: 'Missing clear flag' }), { status: 400 });
-      }
-      const { error } = await supabase
-        .from('hall_of_fame_settings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error) {
-        return new Response(JSON.stringify({ message: error.message }), { status: 500 });
-      }
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
-    }
-    return new Response(JSON.stringify({ message: 'Method not allowed' }), { status: 405 });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ message: err.message || 'Internal server error' }), { status: 500 });
+app.delete('/', async (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+  const { clear } = req.body;
+  if (!clear) {
+    return res.status(400).json({ message: 'Missing clear flag' });
   }
+  const { error } = await supabase
+    .from('hall_of_fame_settings')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) {
+    return res.status(500).json({ message: error.message });
+  }
+  return res.status(200).json({ success: true });
+});
+
+app.all('*', (req, res) => {
+  res.status(405).json({ message: 'Method not allowed' });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
