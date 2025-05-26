@@ -51,6 +51,7 @@ async function logAdminAction(supabaseAdmin: any, entry: AdminLogEntry) {
     // TODO: Integrate alerting/monitoring for repeated failures
   } catch (e) {
     // Logging failure should not block main flow
+    console.error('Failed to log admin action:', e);
   }
 }
 
@@ -59,11 +60,14 @@ Deno.serve(async (req) => {
   let supabaseAdmin: any = undefined;
 
   const origin = req.headers.get('Origin') || '';
-  corsHeaders['Access-Control-Allow-Origin'] = allowedOrigins.includes(origin) ? origin : '';
+  const corsHeadersWithOrigin = {
+    ...corsHeaders,
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : ''
+  };
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: corsHeadersWithOrigin });
   }
 
   try {
@@ -98,14 +102,19 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    // Verify user is admin
+    // Verify user is admin using direct query with service role
     const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (userError || !userData || userData.role !== 'admin') {
+    if (userError) {
+      console.error('Error verifying admin role:', userError);
+      throw new Error('Error verifying admin role');
+    }
+
+    if (!userData || userData.role !== 'admin') {
       throw new Error('Unauthorized - Admin access required');
     }
 
@@ -114,6 +123,7 @@ Deno.serve(async (req) => {
       const { data: authUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
       
       if (listError) {
+        console.error('Error listing users:', listError);
         throw listError;
       }
 
@@ -123,6 +133,7 @@ Deno.serve(async (req) => {
         .select('id, role');
 
       if (rolesError) {
+        console.error('Error fetching user roles:', rolesError);
         throw rolesError;
       }
 
@@ -150,7 +161,7 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...corsHeadersWithOrigin,
             'Content-Type': 'application/json',
           },
         }
@@ -160,13 +171,18 @@ Deno.serve(async (req) => {
       const payload: CreateUserPayload = await req.json();
 
       // Check if user already exists in auth
-      const { data: existingUsers } = await supabaseAdmin
-        .from('auth.users')
-        .select('id')
-        .eq('email', payload.email)
-        .limit(1);
+      const { data: existingUsers, error: existingError } = await supabaseAdmin.auth.admin.listUsers({
+        filter: {
+          email: payload.email
+        }
+      });
 
-      if (existingUsers && existingUsers.length > 0) {
+      if (existingError) {
+        console.error('Error checking existing users:', existingError);
+        throw existingError;
+      }
+
+      if (existingUsers && existingUsers.users.length > 0) {
         throw new Error('A user with this email already exists');
       }
 
@@ -177,15 +193,20 @@ Deno.serve(async (req) => {
       });
 
       if (createError || !newUser.user) {
+        console.error('Error creating user:', createError);
         throw createError || new Error('Failed to create user');
       }
 
       // Check if user already exists in users table
-      const { data: existingUser } = await supabaseAdmin
+      const { data: existingUser, error: existingUserError } = await supabaseAdmin
         .from('users')
         .select('id')
         .eq('id', newUser.user.id)
         .single();
+
+      if (existingUserError && existingUserError.code !== 'PGRST116') {
+        console.error('Error checking existing user in users table:', existingUserError);
+      }
 
       if (!existingUser) {
         // Only insert if user doesn't exist
@@ -197,6 +218,7 @@ Deno.serve(async (req) => {
           }]);
 
         if (roleError) {
+          console.error('Error assigning role:', roleError);
           // Cleanup: delete the auth user if role assignment fails
           await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
           throw roleError;
@@ -221,7 +243,7 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...corsHeadersWithOrigin,
             'Content-Type': 'application/json',
           },
         }
@@ -236,6 +258,7 @@ Deno.serve(async (req) => {
       );
 
       if (authUserError || !authUser.user) {
+        console.error('Error finding user to delete:', authUserError);
         throw new Error('User not found in auth system');
       }
 
@@ -247,6 +270,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (userCheckError) {
+        console.error('Error checking user status:', userCheckError);
         throw new Error(`Failed to check user status: ${userCheckError.message}`);
       }
 
@@ -258,6 +282,7 @@ Deno.serve(async (req) => {
           .eq('role', 'admin');
 
         if (countError) {
+          console.error('Error counting admins:', countError);
           throw new Error(`Failed to count admins: ${countError.message}`);
         }
 
@@ -284,6 +309,7 @@ Deno.serve(async (req) => {
         .eq('id', payload.userId);
 
       if (userDeleteError) {
+        console.error('Error deleting user from users table:', userDeleteError);
         throw new Error(`Failed to delete user from users table: ${userDeleteError.message}`);
       }
 
@@ -293,6 +319,7 @@ Deno.serve(async (req) => {
       );
 
       if (deleteAuthError) {
+        console.error('Error deleting user from auth:', deleteAuthError);
         // If auth deletion fails, we should try to rollback the users table deletion
         try {
           await supabaseAdmin
@@ -318,7 +345,7 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...corsHeadersWithOrigin,
             'Content-Type': 'application/json',
           },
         }
@@ -326,7 +353,7 @@ Deno.serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('Error in admin-user function:', error.message);
 
     // Try to log the failed action if user and supabaseAdmin are available
     try {
@@ -338,7 +365,9 @@ Deno.serve(async (req) => {
           error: error.message,
         });
       }
-    } catch {}
+    } catch (logError) {
+      console.error('Error logging admin action:', logError);
+    }
 
     return new Response(
       JSON.stringify({
@@ -348,7 +377,7 @@ Deno.serve(async (req) => {
       { 
         status: 400,
         headers: {
-          ...corsHeaders,
+          ...corsHeadersWithOrigin,
           'Content-Type': 'application/json',
         },
       }
