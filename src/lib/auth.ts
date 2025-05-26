@@ -15,7 +15,7 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
   if (error) throw error;
   if (!session?.user) throw new Error('No user returned from sign in');
 
-  // Get user role from users table
+  // Get user role from users table using RPC function
   const { data: userData, error: userError } = await supabase.rpc(
     'get_user_role',
     { user_id: session.user.id }

@@ -50,17 +50,23 @@ export const AdminLogin: React.FC = () => {
         throw new Error('No user data returned after login');
       }
 
-      // Step 3: Role verification
-      console.log('User authenticated, verifying role for user:', authData.user.id);
-      const userRole = await verifyUserRole(authData.user.id);
-      console.log('Received user role:', userRole);
+      // Step 3: Role verification using RPC function
+      const { data: role, error: roleError } = await supabase.rpc(
+        'get_user_role',
+        { user_id: authData.user.id }
+      );
 
-      if (!userRole) {
+      if (roleError) {
+        await supabase.auth.signOut();
+        throw new Error('Failed to verify user role. Please contact administrator.');
+      }
+
+      if (!role) {
         await supabase.auth.signOut();
         throw new Error('User role not found. Please contact administrator.');
       }
 
-      if (userRole !== 'admin') {
+      if (role !== 'admin') {
         await supabase.auth.signOut();
         throw new Error('Unauthorized access. Admin privileges required.');
       }
@@ -173,7 +179,7 @@ export const AdminLogin: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-70"
                 >
                   {isLoading ? (
                     <div className="flex items-center">
