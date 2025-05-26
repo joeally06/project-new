@@ -96,7 +96,7 @@ export async function searchResources(searchTerm: string, category?: string, opt
   try {
     // If search term is empty, use regular select with filters
     if (!searchTerm.trim()) {
-      let query = supabase.from('resources').select('*');
+      let query = supabase.from('resources').select('*', { count: 'exact' });
       
       if (category && category !== 'all') {
         query = query.eq('category', category);
@@ -120,7 +120,7 @@ export async function searchResources(searchTerm: string, category?: string, opt
     // For simple search, use ILIKE for both title and description
     let query = supabase
       .from('resources')
-      .select('*')
+      .select('*', { count: 'exact' })
       .or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
     
     // Apply category filter
