@@ -1,24 +1,26 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'npm:@supabase/supabase-js@2.38.1'
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS, DELETE',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'"
+};
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
       headers: corsHeaders,
-    })
+    });
   }
 
   try {
     // Get Supabase client
-    const supabaseClient = createClient(
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -26,59 +28,60 @@ serve(async (req) => {
           autoRefreshToken: false,
           persistSession: false,
         },
-    })
+      }
+    );
 
     // Verify admin authorization
-    const authHeader = req.headers.get('Authorization')
+    const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('No authorization header')
+      throw new Error('No authorization header');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     
     if (userError || !user) {
-      throw new Error('Invalid JWT')
+      throw new Error('Invalid JWT');
     }
 
     // Verify user is admin
-    const { data: userData, error: roleError } = await supabaseClient
+    const { data: userData, error: roleError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .single();
 
     if (roleError || !userData || userData.role !== 'admin') {
-      throw new Error('Unauthorized - Admin access required')
+      throw new Error('Unauthorized - Admin access required');
     }
 
     // Handle different HTTP methods
     if (req.method === 'POST') {
-      const body = await req.json()
+      const body = await req.json();
 
       // Validate required fields
-      const requiredFields = ['name', 'start_date', 'end_date', 'registration_end_date', 'location', 'venue', 'fee', 'payment_instructions']
+      const requiredFields = ['name', 'start_date', 'end_date', 'registration_end_date', 'location', 'venue', 'fee', 'payment_instructions'];
       for (const field of requiredFields) {
         if (!body[field]) {
-          throw new Error(`Missing required field: ${field}`)
+          throw new Error(`Missing required field: ${field}`);
         }
       }
 
       // Validate dates
-      const startDate = new Date(body.start_date)
-      const endDate = new Date(body.end_date)
-      const regEndDate = new Date(body.registration_end_date)
+      const startDate = new Date(body.start_date);
+      const endDate = new Date(body.end_date);
+      const regEndDate = new Date(body.registration_end_date);
 
       if (endDate <= startDate) {
-        throw new Error('End date must be after start date')
+        throw new Error('End date must be after start date');
       }
 
       if (regEndDate > startDate) {
-        throw new Error('Registration end date must be before or on start date')
+        throw new Error('Registration end date must be before or on start date');
       }
 
       // Update tech conference settings
-      const { error: upsertError } = await supabaseClient
+      const { error: upsertError } = await supabaseAdmin
         .from('tech_conference_settings')
         .upsert({
           id: body.id,
@@ -93,53 +96,53 @@ serve(async (req) => {
           description: body.description,
           is_active: true,
           updated_at: new Date().toISOString()
-        })
+        });
 
       if (upsertError) {
-        throw upsertError
+        throw upsertError;
       }
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
-      })
+      });
     } 
     else if (req.method === 'DELETE') {
-      const body = await req.json()
+      const body = await req.json();
       
       if (body.clear) {
         // Archive current settings
-        const { data: currentSettings } = await supabaseClient
+        const { data: currentSettings } = await supabaseAdmin
           .from('tech_conference_settings')
           .select('*')
           .eq('is_active', true)
-          .single()
+          .single();
 
         if (currentSettings) {
           // Set current settings to inactive
-          const { error: updateError } = await supabaseClient
+          const { error: updateError } = await supabaseAdmin
             .from('tech_conference_settings')
             .update({ is_active: false })
-            .eq('id', currentSettings.id)
+            .eq('id', currentSettings.id);
 
           if (updateError) {
-            throw updateError
+            throw updateError;
           }
         }
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200,
-        })
+        });
       }
     }
 
-    throw new Error(`Unsupported method: ${req.method}`)
+    throw new Error(`Unsupported method: ${req.method}`);
   } catch (error) {
     console.error('Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
-    })
+    });
   }
-})
+});
