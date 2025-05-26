@@ -38,7 +38,7 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
     
     if (userError || !user) {
-      throw new Error('Invalid token')
+      throw new Error('Invalid JWT')
     }
 
     // Verify user is admin
@@ -136,6 +136,7 @@ serve(async (req) => {
 
     throw new Error(`Unsupported method: ${req.method}`)
   } catch (error) {
+    console.error('Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
