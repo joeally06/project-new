@@ -69,18 +69,29 @@ export const Resources: React.FC = () => {
       setError(null);
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
+      
       let query = supabase
         .from('resources')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to);
-      if (searchQuery) {
-        query = query.textSearch('title', searchQuery);
-      }
+        .select('*', { count: 'exact' });
+        
+      // Apply category filter if not 'all'
       if (activeCategory !== 'all') {
         query = query.eq('category', activeCategory);
       }
+      
+      // Apply text search if query exists
+      if (searchQuery.trim()) {
+        // Use the pg_trgm extension for text search
+        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+      }
+      
+      // Apply pagination and ordering
+      query = query
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      
       const { data, error, count } = await query;
+      
       if (error) throw error;
       setResources(data || []);
       setTotalCount(count || 0);

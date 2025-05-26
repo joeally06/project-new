@@ -3,6 +3,7 @@ import { Calendar, ChevronDown, Search, Tag } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import type { NewsFilters } from '../lib/types/news';
+import { searchContent } from '../lib/search';
 
 interface NewsItem {
   id: string;
@@ -78,15 +79,36 @@ export const News: React.FC = () => {
     const fetchNews = async () => {
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from('content')
-          .select('*')
-          .eq('type', 'news')
-          .eq('status', 'published')
-          .order('date', { ascending: false, nullsLast: true });
-
-        if (error) throw error;
-        setNewsItems(data || []);
+        
+        if (filters.searchQuery.trim()) {
+          // Use the search function for text search
+          const { data, error } = await searchContent(filters.searchQuery, {
+            type: 'news',
+            status: 'published',
+            category: filters.category !== 'all' ? filters.category : undefined
+          });
+          
+          if (error) throw error;
+          setNewsItems(data || []);
+        } else {
+          // Use regular query for non-search filtering
+          let query = supabase
+            .from('content')
+            .select('*')
+            .eq('type', 'news')
+            .eq('status', 'published');
+            
+          if (filters.category !== 'all') {
+            query = query.eq('category', filters.category);
+          }
+          
+          query = query.order('date', { ascending: false, nullsLast: true });
+          
+          const { data, error } = await query;
+          
+          if (error) throw error;
+          setNewsItems(data || []);
+        }
       } catch (err) {
         console.error('Error fetching news:', err);
         setError('Failed to load news items');
@@ -96,7 +118,7 @@ export const News: React.FC = () => {
     };
 
     fetchNews();
-  }, []);
+  }, [filters]);
 
   // Memoized categories
   const categories: CategoryOption[] = useMemo(() => [
@@ -132,19 +154,6 @@ export const News: React.FC = () => {
 
     return () => clearTimeout(timeoutId);
   }, [updateFilters]);
-
-  // Memoized filtered news items
-  const filteredNews = useMemo(() => {
-    return newsItems.filter(item => {
-      const matchesSearch = filters.searchQuery === '' || 
-        item.title.toLowerCase().includes(filters.searchQuery.toLowerCase()) || 
-        item.description.toLowerCase().includes(filters.searchQuery.toLowerCase());
-        
-      const matchesCategory = filters.category === 'all' || item.category === filters.category;
-      
-      return matchesSearch && matchesCategory;
-    });
-  }, [filters, newsItems]);
 
   return (
     <div className="pt-16">
@@ -205,7 +214,7 @@ export const News: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredNews.map((item) => (
+              {newsItems.map((item) => (
                 <NewsCard 
                   key={item.id} 
                   item={item} 
@@ -215,7 +224,7 @@ export const News: React.FC = () => {
             </div>
           )}
 
-          {!loading && !error && filteredNews.length === 0 && (
+          {!loading && !error && newsItems.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500">No news items found matching your criteria.</p>
             </div>
