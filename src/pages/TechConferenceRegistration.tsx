@@ -59,7 +59,7 @@ const TechConferenceRegistration: React.FC = () => {
         .from('tech_conference_settings')
         .select('*')
         .eq('is_active', true)
-        .maybeSingle();
+        .maybeSingle(); // Use maybeSingle instead of single
 
       if (error) {
         console.error('Error fetching tech conference settings:', error);

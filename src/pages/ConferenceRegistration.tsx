@@ -55,11 +55,12 @@ const ConferenceRegistration: React.FC = () => {
 
   const fetchConferenceSettings = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('conference_settings')
         .select('*')
         .eq('is_active', true)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to handle no rows gracefully
 
       if (error) {
         console.error('Error fetching conference settings:', error);
@@ -69,6 +70,7 @@ const ConferenceRegistration: React.FC = () => {
 
       if (!data) {
         setError('No active conference registration is available at this time.');
+        setIsRegistrationClosed(true);
         return;
       }
 

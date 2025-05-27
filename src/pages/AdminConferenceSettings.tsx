@@ -28,8 +28,8 @@ export const AdminConferenceSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showRolloverModal, setShowRolloverModal] = useState(false);
-  const [isRollingOver, setIsRollingOver] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [isRollingOver, setIsRollingOver] = useState(false);
   
   const [settings, setSettings] = useState<ConferenceSettings>({
     id: '',

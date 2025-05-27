@@ -50,7 +50,7 @@ export const HallOfFameNomination: React.FC = () => {
         .from('hall_of_fame_settings')
         .select('*')
         .eq('is_active', true)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single
 
       if (error) {
         console.error('Error fetching hall of fame settings:', error);
@@ -59,7 +59,7 @@ export const HallOfFameNomination: React.FC = () => {
       }
 
       if (!data) {
-        setError('Nominations are not currently open.');
+        setError('No active nomination period is available at this time.');
         return;
       }
 
