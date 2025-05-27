@@ -1,128 +1,167 @@
-// filepath: supabase/functions/admin-hof-settings/index.ts
-import express from "npm:express@4.18.2";
 import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
-const app = express();
-app.use(express.json());
+const allowedOrigins = [
+  'https://tapt.org',
+  'https://admin.tapt.org',
+  'http://localhost:5173'
+];
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'"
 };
 
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    return res.status(200).set(corsHeaders).send();
+// Utility to sanitize error messages
+const sanitizeError = (error: any): string => {
+  const errorMap: Record<string, string> = {
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/wrong-password': 'Invalid login credentials.',
+    '23505': 'A record with this information already exists.',
+    '22P02': 'Invalid input format.',
+    '23503': 'Related record not found.',
+    '23514': 'Input does not meet requirements.',
+  };
+  
+  if (error && typeof error === 'object') {
+    if (error.code && errorMap[error.code]) return errorMap[error.code];
+    if (error.message && errorMap[error.message]) return errorMap[error.message];
   }
   
-  const authHeader = req.headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  next();
-});
-
-app.post('/', async (req, res) => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-  const { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at } = req.body;
-  if (!name || !start_date || !end_date) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
-  const { error } = await supabase
-    .from('hall_of_fame_settings')
-    .upsert([
-      { id, name, start_date, end_date, description, nomination_instructions, eligibility_criteria, is_active, updated_at }
-    ]);
-  if (error) {
-    return res.status(500).json({ message: error.message });
-  }
-  return res.status(200).json({ success: true });
-});
-
-app.delete('/', async (req, res) => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-  const { clear } = req.body;
-  if (!clear) {
-    return res.status(400).json({ message: 'Missing clear flag' });
-  }
-  const { error } = await supabase
-    .from('hall_of_fame_settings')
-    .delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000');
-  if (error) {
-    return res.status(500).json({ message: error.message });
-  }
-  return res.status(200).json({ success: true });
-});
-
-app.all('*', (req, res) => {
-  res.status(405).json({ message: 'Method not allowed' });
-});
+  return 'An unexpected error occurred. Please try again.';
+};
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('Origin') || '';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    ...securityHeaders
+  };
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Create a mock Express request and response
-  const mockReq = {
-    method: req.method,
-    url: new URL(req.url).pathname,
-    headers: Object.fromEntries(req.headers.entries()),
-    body: req.method !== 'GET' ? await req.json() : undefined,
-  };
-
-  let responseBody = '';
-  let responseStatus = 200;
-  let responseHeaders = {};
-
-  const mockRes = {
-    status: (status) => {
-      responseStatus = status;
-      return mockRes;
-    },
-    set: (headers) => {
-      responseHeaders = { ...responseHeaders, ...headers };
-      return mockRes;
-    },
-    json: (body) => {
-      responseBody = JSON.stringify(body);
-      responseHeaders['Content-Type'] = 'application/json';
-      return mockRes;
-    },
-    send: (body) => {
-      responseBody = body;
-      return mockRes;
-    }
-  };
-
-  // Process the request through Express
   try {
-    await new Promise((resolve) => {
-      app._router.handle(mockReq, mockRes, resolve);
-    });
-  } catch (error) {
-    console.error('Error handling request:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+    // Create Supabase client with service role key
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       }
     );
-  }
 
-  // Return the response
-  return new Response(responseBody, {
-    status: responseStatus,
-    headers: { ...corsHeaders, ...responseHeaders }
-  });
+    // Verify admin authorization
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) {
+      throw new Error('Invalid JWT');
+    }
+
+    // Verify user is admin
+    const { data: userData, error: roleError } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (roleError || !userData || userData.role !== 'admin') {
+      throw new Error('Unauthorized - Admin access required');
+    }
+
+    // Handle different HTTP methods
+    if (req.method === 'POST') {
+      const body = await req.json();
+
+      // Validate required fields
+      const requiredFields = ['name', 'start_date', 'end_date', 'nomination_instructions', 'eligibility_criteria'];
+      for (const field of requiredFields) {
+        if (!body[field]) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+
+      // Validate dates
+      const startDate = new Date(body.start_date);
+      const endDate = new Date(body.end_date);
+
+      if (endDate <= startDate) {
+        throw new Error('End date must be after start date');
+      }
+
+      // Update hall of fame settings
+      const { error: upsertError } = await supabaseAdmin
+        .from('hall_of_fame_settings')
+        .upsert({
+          id: body.id,
+          name: body.name,
+          start_date: body.start_date,
+          end_date: body.end_date,
+          description: body.description,
+          nomination_instructions: body.nomination_instructions,
+          eligibility_criteria: body.eligibility_criteria,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        });
+
+      if (upsertError) {
+        throw upsertError;
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    } 
+    else if (req.method === 'DELETE') {
+      const body = await req.json();
+      
+      if (body.clear) {
+        // Archive current settings
+        const { data: currentSettings } = await supabaseAdmin
+          .from('hall_of_fame_settings')
+          .select('*')
+          .eq('is_active', true)
+          .single();
+
+        if (currentSettings) {
+          // Set current settings to inactive
+          const { error: updateError } = await supabaseAdmin
+            .from('hall_of_fame_settings')
+            .update({ is_active: false })
+            .eq('id', currentSettings.id);
+
+          if (updateError) {
+            throw updateError;
+          }
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+    }
+
+    throw new Error(`Unsupported method: ${req.method}`);
+  } catch (error) {
+    console.error('Error:', error.message);
+    return new Response(JSON.stringify({ error: sanitizeError(error) }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    });
+  }
 });

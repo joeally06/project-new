@@ -1,15 +1,47 @@
 import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
+const allowedOrigins = [
+  'https://tapt.org',
+  'https://admin.tapt.org',
+  'http://localhost:5173'
+];
+
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'"
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  ...securityHeaders
 };
 
 interface RolloverRequest {
   type: string;
   settings: Record<string, any>;
 }
+
+// Utility to sanitize error messages
+const sanitizeError = (error: any): string => {
+  const errorMap: Record<string, string> = {
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/wrong-password': 'Invalid login credentials.',
+    '23505': 'A record with this information already exists.',
+    '22P02': 'Invalid input format.',
+    '23503': 'Related record not found.',
+    '23514': 'Input does not meet requirements.',
+  };
+  
+  if (error && typeof error === 'object') {
+    if (error.code && errorMap[error.code]) return errorMap[error.code];
+    if (error.message && errorMap[error.message]) return errorMap[error.message];
+  }
+  
+  return 'An unexpected error occurred. Please try again.';
+};
 
 // Helper to log rollover actions
 type RolloverLogEntry = {
@@ -24,14 +56,12 @@ type RolloverLogEntry = {
 
 async function logRolloverAction(supabaseAdmin: any, entry: RolloverLogEntry) {
   try {
-    await supabaseAdmin.from('rollover_audit').insert([
+    await supabaseAdmin.from('admin_logs').insert([
       {
-        action: entry.action,
+        action: `rollover_${entry.type || 'unknown'}`,
         user_id: entry.user_id,
         outcome: entry.outcome,
         error: entry.error || null,
-        type: entry.type || null,
-        archive_id: entry.archiveId || null,
         details: entry.details ? JSON.stringify(entry.details) : null,
         timestamp: new Date().toISOString(),
       },
@@ -48,30 +78,6 @@ Deno.serve(async (req) => {
       status: 204,
       headers: corsHeaders
     });
-  }
-
-  // Extra debug logging
-  try {
-    console.log('--- Rollover Request Start ---');
-    console.log('Request method:', req.method);
-    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
-    let rawBody = '';
-    try {
-      rawBody = await req.text();
-      console.log('Raw request body:', rawBody);
-    } catch (e) {
-      console.log('Could not read raw body:', e);
-    }
-    // Re-parse body for actual use
-    let parsedBody: any = {};
-    try {
-      parsedBody = rawBody ? JSON.parse(rawBody) : {};
-      console.log('Parsed request body:', parsedBody);
-    } catch (e) {
-      console.log('Could not parse JSON body:', e);
-    }
-  } catch (logError) {
-    console.log('Error in debug logging:', logError);
   }
 
   try {
@@ -133,11 +139,20 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { type, settings }: RolloverRequest = parsedBody;
+    const requestBody = await req.json();
+    const { type, settings }: RolloverRequest = requestBody;
 
     if (!type || !settings) {
       return new Response(
         JSON.stringify({ success: false, error: 'Missing required fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate settings
+    if (!settings.id || !settings.start_date || !settings.end_date) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing required settings fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -274,7 +289,7 @@ Deno.serve(async (req) => {
 
         const { error: insertError } = await supabaseAdmin
           .from('conference_settings')
-          .insert({ ...settings, is_active: true });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
@@ -282,14 +297,139 @@ Deno.serve(async (req) => {
       }
 
       case 'tech-conference': {
-        // Similar implementation as conference case
-        // ... (code omitted for brevity as it follows the same pattern)
+        // Get current registrations
+        const { data: registrations, error: regError } = await supabaseAdmin
+          .from('tech_conference_registrations')
+          .select('*');
+
+        if (regError) throw regError;
+
+        if (registrations && registrations.length > 0) {
+          // Generate new archive ID
+          archiveId = crypto.randomUUID();
+
+          // Insert into archive with new IDs
+          const archiveData = registrations.map(reg => ({
+            ...reg,
+            id: crypto.randomUUID(),
+            original_id: reg.id,
+            archived_at: new Date().toISOString(),
+            archive_id: archiveId
+          }));
+
+          const { error: archiveError } = await supabaseAdmin
+            .from('tech_conference_registrations_archive')
+            .insert(archiveData);
+
+          if (archiveError) throw archiveError;
+
+          // Get attendees
+          const { data: attendees, error: attError } = await supabaseAdmin
+            .from('tech_conference_attendees')
+            .select('*');
+
+          if (attError) throw attError;
+
+          if (attendees && attendees.length > 0) {
+            // Archive attendees with new IDs
+            const attendeeArchiveData = attendees.map(att => ({
+              ...att,
+              id: crypto.randomUUID(),
+              original_id: att.id,
+              archived_at: new Date().toISOString(),
+              archive_id: archiveId
+            }));
+
+            const { error: attendeesArchiveError } = await supabaseAdmin
+              .from('tech_conference_attendees_archive')
+              .insert(attendeeArchiveData);
+
+            if (attendeesArchiveError) throw attendeesArchiveError;
+          }
+
+          // Delete all records from the original tables
+          const { error: deleteAttendeesError } = await supabaseAdmin
+            .from('tech_conference_attendees')
+            .delete()
+            .not('id', 'is', null);
+
+          if (deleteAttendeesError) throw deleteAttendeesError;
+
+          const { error: deleteRegistrationsError } = await supabaseAdmin
+            .from('tech_conference_registrations')
+            .delete()
+            .not('id', 'is', null);
+
+          if (deleteRegistrationsError) throw deleteRegistrationsError;
+        }
+
+        // Update settings
+        const { error: updateError } = await supabaseAdmin
+          .from('tech_conference_settings')
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
+        if (updateError) throw updateError;
+
+        const { error: insertError } = await supabaseAdmin
+          .from('tech_conference_settings')
+          .upsert({ ...settings, is_active: true });
+
+        if (insertError) throw insertError;
+
         break;
       }
 
       case 'hall-of-fame': {
-        // Similar implementation as conference case
-        // ... (code omitted for brevity as it follows the same pattern)
+        // Get current nominations
+        const { data: nominations, error: nomError } = await supabaseAdmin
+          .from('hall_of_fame_nominations')
+          .select('*');
+
+        if (nomError) throw nomError;
+
+        if (nominations && nominations.length > 0) {
+          // Generate new archive ID
+          archiveId = crypto.randomUUID();
+
+          // Insert into archive with new IDs
+          const archiveData = nominations.map(nom => ({
+            ...nom,
+            id: crypto.randomUUID(),
+            original_id: nom.id,
+            archived_at: new Date().toISOString(),
+            archive_id: archiveId
+          }));
+
+          const { error: archiveError } = await supabaseAdmin
+            .from('hall_of_fame_nominations_archive')
+            .insert(archiveData);
+
+          if (archiveError) throw archiveError;
+
+          // Delete all records from the original table
+          const { error: deleteNominationsError } = await supabaseAdmin
+            .from('hall_of_fame_nominations')
+            .delete()
+            .not('id', 'is', null);
+
+          if (deleteNominationsError) throw deleteNominationsError;
+        }
+
+        // Update settings
+        const { error: updateError } = await supabaseAdmin
+          .from('hall_of_fame_settings')
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
+        if (updateError) throw updateError;
+
+        const { error: insertError } = await supabaseAdmin
+          .from('hall_of_fame_settings')
+          .upsert({ ...settings, is_active: true });
+
+        if (insertError) throw insertError;
+
         break;
       }
     }
@@ -337,7 +477,7 @@ Deno.serve(async (req) => {
       
       let type = null, settings = null;
       try {
-        const body = parsedBody;
+        const body = await req.json();
         type = body.type || null;
         settings = body.settings || null;
       } catch {}
@@ -357,7 +497,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: errorMessage,
+        error: sanitizeError(error),
       }),
       { 
         status: 400,

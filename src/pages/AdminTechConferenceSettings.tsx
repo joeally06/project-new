@@ -32,7 +32,7 @@ export const AdminTechConferenceSettings: React.FC = () => {
   const [isRollingOver, setIsRollingOver] = useState(false);
   
   const [settings, setSettings] = useState<TechConferenceSettings>({
-    id: crypto.randomUUID(), // Generate a valid UUID by default
+    id: '',
     name: '',
     start_date: '',
     end_date: '',
@@ -83,17 +83,41 @@ export const AdminTechConferenceSettings: React.FC = () => {
           registration_end_date: data.registration_end_date.split('T')[0],
           is_active: data.is_active
         });
-      } else {
-        // If no settings exist, ensure we have a valid UUID
-        setSettings(prev => ({
-          ...prev,
-          id: crypto.randomUUID()
-        }));
       }
     } catch (error: any) {
       setError(`Failed to load tech conference settings: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUUID = async (): Promise<string> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate UUID');
+      }
+
+      const { uuid } = await response.json();
+      return uuid;
+    } catch (error: any) {
+      console.error('Error fetching UUID:', error);
+      throw error;
     }
   };
 
@@ -113,12 +137,10 @@ export const AdminTechConferenceSettings: React.FC = () => {
     setSuccess(null);
 
     try {
-      // Ensure we have a valid UUID
-      if (!settings.id || settings.id.trim() === '') {
-        setSettings(prev => ({
-          ...prev,
-          id: crypto.randomUUID()
-        }));
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
       }
 
       // Get the current session
@@ -181,8 +203,9 @@ export const AdminTechConferenceSettings: React.FC = () => {
       }
       
       setSuccess('Tech conference settings cleared successfully!');
+      const uuid = await fetchUUID();
       setSettings({
-        id: crypto.randomUUID(), // Generate a new UUID
+        id: uuid,
         name: '',
         start_date: '',
         end_date: '',
@@ -229,22 +252,14 @@ export const AdminTechConferenceSettings: React.FC = () => {
         throw new Error('Please set all required dates before rolling over');
       }
 
-      // Generate a new UUID for the settings
-      const uuidRes = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-      
-      if (!uuidRes.ok) {
-        throw new Error('Failed to generate UUID');
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
       }
-      
-      const { uuid } = await uuidRes.json();
 
       const newSettings = {
         ...settings,
-        id: uuid,
         start_date: settings.start_date,
         end_date: settings.end_date,
         registration_end_date: settings.registration_end_date,
@@ -346,8 +361,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
           >
             {clearing ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                  <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Clearing...
@@ -568,8 +583,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
               >
                 {saving ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                      <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     Saving...
@@ -636,8 +651,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
                 >
                   {isRollingOver ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                        <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Rolling Over...

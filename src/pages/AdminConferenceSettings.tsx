@@ -32,7 +32,7 @@ export const AdminConferenceSettings: React.FC = () => {
   const [showClearModal, setShowClearModal] = useState(false);
   
   const [settings, setSettings] = useState<ConferenceSettings>({
-    id: crypto.randomUUID(),
+    id: '',
     name: '',
     start_date: '',
     end_date: '',
@@ -88,6 +88,36 @@ export const AdminConferenceSettings: React.FC = () => {
     }
   };
 
+  const fetchUUID = async (): Promise<string> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate UUID');
+      }
+
+      const { uuid } = await response.json();
+      return uuid;
+    } catch (error: any) {
+      console.error('Error fetching UUID:', error);
+      throw error;
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     
@@ -103,6 +133,12 @@ export const AdminConferenceSettings: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       // Use Edge Function for upsert (add/update)
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-conference-settings`, {
         method: 'POST',
@@ -114,7 +150,7 @@ export const AdminConferenceSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save conference settings');
+        throw new Error(errorData.error || 'Failed to save conference settings');
       }
       setSuccess('Conference settings saved successfully!');
       await fetchSettings();
@@ -141,11 +177,12 @@ export const AdminConferenceSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to clear conference settings');
+        throw new Error(errorData.error || 'Failed to clear conference settings');
       }
       setSuccess('Conference settings cleared successfully!');
+      const uuid = await fetchUUID();
       setSettings({
-        id: crypto.randomUUID(),
+        id: uuid,
         name: '',
         start_date: '',
         end_date: '',
@@ -192,9 +229,14 @@ export const AdminConferenceSettings: React.FC = () => {
         throw new Error('Please set all required dates before rolling over');
       }
 
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       const newSettings = {
         ...settings,
-        id: crypto.randomUUID(),
         start_date: settings.start_date,
         end_date: settings.end_date,
         registration_end_date: settings.registration_end_date,
@@ -217,7 +259,7 @@ export const AdminConferenceSettings: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to rollover conference: ${response.statusText}`);
+        throw new Error(errorData.error || `Failed to rollover conference: ${response.statusText}`);
       }
 
       const result = await response.json();
