@@ -238,12 +238,12 @@ export const AdminHallOfFameNominations: React.FC = () => {
 
       // Add nomination details
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.text(`${index + 1}. ${nomination.nominee_first_name} ${nomination.nominee_last_name}`, margin, yPos);
       yPos += 7;
 
       doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
+      doc.setFont('helvetica', 'normal');
       doc.text(`District: ${nomination.district}`, margin, yPos);
       yPos += 5;
       doc.text(`Region: ${nomination.region}`, margin, yPos);
@@ -256,17 +256,17 @@ export const AdminHallOfFameNominations: React.FC = () => {
       yPos += 7;
 
       // Add nomination reason with word wrap
-      doc.setFont(undefined, 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.text('Nomination Reason:', margin, yPos);
       yPos += 7;
-      doc.setFont(undefined, 'normal');
+      doc.setFont('helvetica', 'normal');
 
       const splitReason = doc.splitTextToSize(nomination.nomination_reason, maxLineWidth);
       doc.text(splitReason, margin, yPos);
       yPos += splitReason.length * 5 + 10;
 
       // Add nominator info
-      doc.setFont(undefined, 'italic');
+      doc.setFont('helvetica', 'italic');
       doc.text(`Nominated by: ${nomination.supervisor_first_name} ${nomination.supervisor_last_name}`, margin, yPos);
       yPos += 5;
       doc.text(`Email: ${nomination.supervisor_email}`, margin, yPos);

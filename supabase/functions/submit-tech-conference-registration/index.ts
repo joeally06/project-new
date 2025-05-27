@@ -60,9 +60,9 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    
+
     // Enhanced validation
-    const errors = [];
+    let errors: string[] = [];
     if (!body.firstName || typeof body.firstName !== 'string') {
       errors.push('First name is required');
     }
@@ -102,6 +102,70 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );
+    }
+
+    // CAPTCHA verification
+    const captchaToken = body.captchaToken;
+    if (!captchaToken) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'CAPTCHA verification failed. Please try again.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    // Use globalThis.Deno for Deno.env.get in Edge Functions
+    const recaptchaSecret = (typeof Deno !== 'undefined' ? Deno.env.get('RECAPTCHA_SECRET_KEY') : undefined) || (typeof globalThis !== 'undefined' && globalThis.Deno ? globalThis.Deno.env.get('RECAPTCHA_SECRET_KEY') : undefined);
+    if (!recaptchaSecret) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server misconfiguration: CAPTCHA secret missing.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const captchaVerifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `secret=${encodeURIComponent(recaptchaSecret)}&response=${encodeURIComponent(captchaToken)}`
+    });
+    const captchaVerifyData = await captchaVerifyRes.json();
+    if (!captchaVerifyData.success) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'CAPTCHA verification failed. Please try again.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Rate limiting: max 3 submissions per hour per email
+    const rateLimitKey = `tech_conference_registration_${body.email}`;
+    const { data: rateLimit } = await supabaseAdmin
+      .from('rate_limits')
+      .select('count, last_attempt')
+      .eq('key', rateLimitKey)
+      .single();
+
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    if (rateLimit) {
+      if (new Date(rateLimit.last_attempt) > hourAgo && rateLimit.count >= 3) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      await supabaseAdmin
+        .from('rate_limits')
+        .upsert({
+          key: rateLimitKey,
+          count: new Date(rateLimit.last_attempt) > hourAgo ? rateLimit.count + 1 : 1,
+          last_attempt: now.toISOString()
+        });
+    } else {
+      await supabaseAdmin
+        .from('rate_limits')
+        .insert({
+          key: rateLimitKey,
+          count: 1,
+          last_attempt: now.toISOString()
+        });
     }
 
     // Insert main registration
