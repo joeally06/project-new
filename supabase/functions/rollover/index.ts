@@ -50,6 +50,30 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Extra debug logging
+  try {
+    console.log('--- Rollover Request Start ---');
+    console.log('Request method:', req.method);
+    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
+    let rawBody = '';
+    try {
+      rawBody = await req.text();
+      console.log('Raw request body:', rawBody);
+    } catch (e) {
+      console.log('Could not read raw body:', e);
+    }
+    // Re-parse body for actual use
+    let parsedBody: any = {};
+    try {
+      parsedBody = rawBody ? JSON.parse(rawBody) : {};
+      console.log('Parsed request body:', parsedBody);
+    } catch (e) {
+      console.log('Could not parse JSON body:', e);
+    }
+  } catch (logError) {
+    console.log('Error in debug logging:', logError);
+  }
+
   try {
     // Verify request method
     if (req.method !== 'POST') {
@@ -109,7 +133,7 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { type, settings }: RolloverRequest = await req.json();
+    const { type, settings }: RolloverRequest = parsedBody;
 
     if (!type || !settings) {
       return new Response(
@@ -313,7 +337,7 @@ Deno.serve(async (req) => {
       
       let type = null, settings = null;
       try {
-        const body = await req.json();
+        const body = parsedBody;
         type = body.type || null;
         settings = body.settings || null;
       } catch {}
