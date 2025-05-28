@@ -31,13 +31,6 @@ const sanitizeError = (error: any): string => {
   return 'An unexpected error occurred. Please try again.';
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  ...securityHeaders
-};
-
 interface MembershipApplication {
   first_name: string;
   last_name: string;
@@ -53,21 +46,40 @@ interface MembershipApplication {
 }
 
 Deno.serve(async (req) => {
+  console.log("Submit membership function called");
+  
   const origin = req.headers.get('Origin') || '';
-  corsHeaders['Access-Control-Allow-Origin'] = allowedOrigins.includes(origin) ? origin : '';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    ...securityHeaders
+  };
 
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log("Handling CORS preflight request");
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log("Processing membership submission request");
+    
     if (req.method !== 'POST') {
       throw new Error('Method not allowed');
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase environment variables");
+      throw new Error('Server configuration error: Missing required environment variables');
+    }
+
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      supabaseUrl,
+      supabaseServiceKey,
       {
         auth: {
           autoRefreshToken: false,
@@ -76,7 +88,14 @@ Deno.serve(async (req) => {
       }
     );
 
-    const payload: MembershipApplication = await req.json();
+    let payload: MembershipApplication;
+    try {
+      payload = await req.json();
+      console.log("Received payload:", JSON.stringify(payload));
+    } catch (error) {
+      console.error("Error parsing request JSON:", error);
+      throw new Error('Invalid request format: Unable to parse JSON');
+    }
 
     // Validate required fields
     const requiredFields = [
@@ -94,6 +113,7 @@ Deno.serve(async (req) => {
 
     for (const field of requiredFields) {
       if (!payload[field as keyof MembershipApplication]) {
+        console.error(`Missing required field: ${field}`);
         throw new Error(`Missing required field: ${field}`);
       }
     }
@@ -101,28 +121,33 @@ Deno.serve(async (req) => {
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(payload.email)) {
+      console.error("Invalid email format:", payload.email);
       throw new Error('Invalid email format');
     }
 
     // Validate phone format
     const phoneRegex = /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/;
     if (!phoneRegex.test(payload.phone.replace(/\s/g, ''))) {
+      console.error("Invalid phone number format:", payload.phone);
       throw new Error('Invalid phone number format');
     }
 
     // Validate membership type
     const validTypes = ['individual', 'district', 'vendor'];
     if (!validTypes.includes(payload.membership_type)) {
+      console.error("Invalid membership type:", payload.membership_type);
       throw new Error('Invalid membership type');
     }
 
     // Validate interests array
     if (!Array.isArray(payload.interests) || payload.interests.length === 0) {
+      console.error("Invalid interests:", payload.interests);
       throw new Error('At least one interest must be selected');
     }
 
     // Validate terms agreement
     if (!payload.agree_to_terms) {
+      console.error("Terms not agreed to");
       throw new Error('Must agree to terms and conditions');
     }
 
@@ -139,6 +164,7 @@ Deno.serve(async (req) => {
 
     if (rateLimit) {
       if (new Date(rateLimit.last_attempt) > hourAgo && rateLimit.count >= 3) {
+        console.error("Rate limit exceeded for email:", payload.email);
         throw new Error('Rate limit exceeded. Please try again later.');
       }
 
@@ -167,14 +193,17 @@ Deno.serve(async (req) => {
       .eq('status', 'pending');
 
     if (duplicateError) {
+      console.error("Error checking for duplicates:", duplicateError);
       throw new Error('Failed to check for duplicate applications');
     }
 
     if (existingCount && existingCount > 0) {
+      console.error("Duplicate application detected for email:", payload.email);
       throw new Error('You already have a pending membership application');
     }
 
     // Insert application
+    console.log("Inserting membership application");
     const { data, error } = await supabaseAdmin
       .from('membership_applications')
       .insert([{
@@ -184,8 +213,12 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error inserting application:", error);
+      throw error;
+    }
 
+    console.log("Membership application submitted successfully");
     return new Response(
       JSON.stringify({ 
         success: true,
@@ -200,6 +233,7 @@ Deno.serve(async (req) => {
     );
 
   } catch (error) {
+    console.error("Error in submit-membership function:", error);
     return new Response(
       JSON.stringify({
         success: false,

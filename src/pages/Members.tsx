@@ -99,6 +99,9 @@ export const Members: React.FC = () => {
         throw new Error('VITE_SUPABASE_URL is not defined');
       }
 
+      console.log('Submitting membership application to:', `${supabaseUrl}/functions/v1/submit-membership`);
+      console.log('With data:', JSON.stringify(formData, null, 2));
+
       const response = await fetch(
         `${supabaseUrl}/functions/v1/submit-membership`,
         {
@@ -111,9 +114,14 @@ export const Members: React.FC = () => {
         }
       );
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+
       const result = await response.json();
 
-      if (!response.ok) {
+      if (!result.success) {
         throw new Error(result.error || 'Failed to submit application');
       }
 
