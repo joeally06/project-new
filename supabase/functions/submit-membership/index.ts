@@ -1,5 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
-import { sanitizeError } from '../../../src/lib/errors.ts';
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 const allowedOrigins = [
   'https://tapt.org',
@@ -11,6 +10,25 @@ const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'none'"
+};
+
+// Utility to sanitize error messages
+const sanitizeError = (error: any): string => {
+  const errorMap: Record<string, string> = {
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/wrong-password': 'Invalid login credentials.',
+    '23505': 'A record with this information already exists.',
+    '22P02': 'Invalid input format.',
+    '23503': 'Related record not found.',
+    '23514': 'Input does not meet requirements.',
+  };
+  
+  if (error && typeof error === 'object') {
+    if (error.code && errorMap[error.code]) return errorMap[error.code];
+    if (error.message && errorMap[error.message]) return errorMap[error.message];
+  }
+  
+  return 'An unexpected error occurred. Please try again.';
 };
 
 const corsHeaders = {

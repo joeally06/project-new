@@ -83,10 +83,33 @@ export const AdminHallOfFameSettings: React.FC = () => {
   };
 
   const fetchUUID = async (): Promise<string> => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const uuidRes = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`);
-    const { uuid } = await uuidRes.json();
-    return uuid;
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate UUID');
+      }
+
+      const { uuid } = await response.json();
+      return uuid;
+    } catch (error: any) {
+      console.error('Error fetching UUID:', error);
+      throw error;
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -104,6 +127,12 @@ export const AdminHallOfFameSettings: React.FC = () => {
     setSuccess(null);
 
     try {
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-settings`, {
         method: 'POST',
         headers: {
@@ -114,7 +143,7 @@ export const AdminHallOfFameSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save hall of fame settings');
+        throw new Error(errorData.error || 'Failed to save hall of fame settings');
       }
       setSuccess('Hall of Fame settings saved successfully!');
       await fetchSettings();
@@ -141,7 +170,7 @@ export const AdminHallOfFameSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to clear hall of fame settings');
+        throw new Error(errorData.error || 'Failed to clear hall of fame settings');
       }
       setSuccess('Hall of Fame settings cleared successfully!');
       const uuid = await fetchUUID();
@@ -185,10 +214,17 @@ export const AdminHallOfFameSettings: React.FC = () => {
         throw new Error('Please set all required dates before rolling over');
       }
 
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       // Prepare new settings
+      const uuid = await fetchUUID();
       const newSettings = {
         ...settings,
-        id: await fetchUUID(),
+        id: uuid,
         start_date: settings.start_date,
         end_date: settings.end_date,
       };
@@ -199,7 +235,7 @@ export const AdminHallOfFameSettings: React.FC = () => {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${user?.access_token}`,
+            'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -211,7 +247,7 @@ export const AdminHallOfFameSettings: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to rollover hall of fame: ${response.statusText}`);
+        throw new Error(errorData.error || `Failed to rollover hall of fame: ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -290,8 +326,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
           >
             {clearing ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                  <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Clearing...
@@ -442,8 +478,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
               >
                 {saving ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                      <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     Saving...
@@ -501,8 +537,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
                 >
                   {isRollingOver ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                        <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Rolling Over...

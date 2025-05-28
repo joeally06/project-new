@@ -1,52 +1,25 @@
 import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
-const allowedOrigins = [
-  'https://tapt.org',
-  'https://admin.tapt.org',
-  'http://localhost:5173'
-];
-
-const securityHeaders = {
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS, DELETE',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'none'"
 };
 
-// Utility to sanitize error messages
-const sanitizeError = (error: any): string => {
-  const errorMap: Record<string, string> = {
-    'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/wrong-password': 'Invalid login credentials.',
-    '23505': 'A record with this information already exists.',
-    '22P02': 'Invalid input format.',
-    '23503': 'Related record not found.',
-    '23514': 'Input does not meet requirements.',
-  };
-  
-  if (error && typeof error === 'object') {
-    if (error.code && errorMap[error.code]) return errorMap[error.code];
-    if (error.message && errorMap[error.message]) return errorMap[error.message];
-  }
-  
-  return 'An unexpected error occurred. Please try again.';
-};
-
 Deno.serve(async (req) => {
-  const origin = req.headers.get('Origin') || '';
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    ...securityHeaders
-  };
-
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
   try {
-    // Create Supabase client with service role key
+    // Get Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -87,7 +60,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
 
       // Validate required fields
-      const requiredFields = ['name', 'start_date', 'end_date', 'nomination_instructions', 'eligibility_criteria'];
+      const requiredFields = ['name', 'start_date', 'end_date', 'registration_end_date', 'location', 'venue', 'fee', 'payment_instructions'];
       for (const field of requiredFields) {
         if (!body[field]) {
           throw new Error(`Missing required field: ${field}`);
@@ -97,22 +70,30 @@ Deno.serve(async (req) => {
       // Validate dates
       const startDate = new Date(body.start_date);
       const endDate = new Date(body.end_date);
+      const regEndDate = new Date(body.registration_end_date);
 
       if (endDate <= startDate) {
         throw new Error('End date must be after start date');
       }
 
-      // Update hall of fame settings
+      if (regEndDate > startDate) {
+        throw new Error('Registration end date must be before or on start date');
+      }
+
+      // Update conference settings
       const { error: upsertError } = await supabaseAdmin
-        .from('hall_of_fame_settings')
+        .from('conference_settings')
         .upsert({
           id: body.id,
           name: body.name,
           start_date: body.start_date,
           end_date: body.end_date,
+          registration_end_date: body.registration_end_date,
+          location: body.location,
+          venue: body.venue,
+          fee: body.fee,
+          payment_instructions: body.payment_instructions,
           description: body.description,
-          nomination_instructions: body.nomination_instructions,
-          eligibility_criteria: body.eligibility_criteria,
           is_active: true,
           updated_at: new Date().toISOString()
         });
@@ -132,7 +113,7 @@ Deno.serve(async (req) => {
       if (body.clear) {
         // Archive current settings
         const { data: currentSettings } = await supabaseAdmin
-          .from('hall_of_fame_settings')
+          .from('conference_settings')
           .select('*')
           .eq('is_active', true)
           .single();
@@ -140,7 +121,7 @@ Deno.serve(async (req) => {
         if (currentSettings) {
           // Set current settings to inactive
           const { error: updateError } = await supabaseAdmin
-            .from('hall_of_fame_settings')
+            .from('conference_settings')
             .update({ is_active: false })
             .eq('id', currentSettings.id);
 
@@ -159,7 +140,7 @@ Deno.serve(async (req) => {
     throw new Error(`Unsupported method: ${req.method}`);
   } catch (error) {
     console.error('Error:', error.message);
-    return new Response(JSON.stringify({ error: sanitizeError(error) }), {
+    return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     });

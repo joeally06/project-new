@@ -1,15 +1,9 @@
-// [SECURITY] Replaced all generateUUID() usages with server-generated UUIDs from Edge Function.
-// Example usage:
-// const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-// const uuidRes = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`);
-// const { uuid } = await uuidRes.json();
-// Use 'uuid' as the ID when creating new records.
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, MapPin, DollarSign, Clock, Save, AlertCircle, ArrowLeft, Trash2, Archive } from 'lucide-react';
+import { Calendar, MapPin, DollarSign, Clock, Save, AlertCircle, ArrowLeft, Trash2, Archive } from 'lucide-react';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { useAuth } from '../context/AuthContext';
 
 interface TechConferenceSettings {
   id: string;
@@ -25,41 +19,9 @@ interface TechConferenceSettings {
   is_active: boolean;
 }
 
-// Helper to log admin actions to Edge Function
-type AdminLogPayload = {
-  action: string;
-  outcome: 'success' | 'failure';
-  error?: string;
-  details?: any;
-};
-
-const logAdminAction = async (
-  session: any,
-  payload: AdminLogPayload
-) => {
-  try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl || !session?.access_token) return;
-    await fetch(`${supabaseUrl}/functions/v1/admin-log`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...payload,
-        user_id: session.user.id,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-  } catch (e) {
-    // Logging failure should not block UI
-    // TODO: Integrate alerting/monitoring for repeated failures
-  }
-};
-
 export const AdminTechConferenceSettings: React.FC = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -84,49 +46,19 @@ export const AdminTechConferenceSettings: React.FC = () => {
   });
 
   useEffect(() => {
-    checkSession();
-  }, []);
-
-  const checkSession = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        throw sessionError;
-      }
-      
-      if (!session) {
+    if (!authLoading) {
+      if (!user) {
         navigate('/admin/login');
         return;
       }
-
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', session.user.id)
-        .single();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!userData || userData.role !== 'admin') {
-        await supabase.auth.signOut();
-        navigate('/admin/login');
+      if (user.role !== 'admin') {
+        navigate('/');
         return;
       }
-
-      await fetchSettings();
-    } catch (error: any) {
-      setError(error.message);
-      navigate('/admin/login');
-    } finally {
-      setLoading(false);
+      fetchSettings();
     }
-  };
+    // eslint-disable-next-line
+  }, [authLoading, user]);
 
   const fetchSettings = async () => {
     try {
@@ -159,6 +91,36 @@ export const AdminTechConferenceSettings: React.FC = () => {
     }
   };
 
+  const fetchUUID = async (): Promise<string> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate UUID');
+      }
+
+      const { uuid } = await response.json();
+      return uuid;
+    } catch (error: any) {
+      console.error('Error fetching UUID:', error);
+      throw error;
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     
@@ -168,27 +130,41 @@ export const AdminTechConferenceSettings: React.FC = () => {
     }));
   };
 
-  // Refactor: Use Edge Function for all tech conference settings mutations
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSuccess(null);
-    let session;
+
     try {
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       // Use Edge Function for upsert (add/update)
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-tech-conference-settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ ...settings, updated_at: new Date().toISOString() })
       });
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save tech conference settings');
+        throw new Error(errorData.error || 'Failed to save tech conference settings');
       }
+      
       setSuccess('Tech conference settings saved successfully!');
       await fetchSettings();
     } catch (error: any) {
@@ -202,24 +178,34 @@ export const AdminTechConferenceSettings: React.FC = () => {
     setClearing(true);
     setError(null);
     setSuccess(null);
-    let session;
+
     try {
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       // Use Edge Function for delete/clear
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-tech-conference-settings`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ clear: true })
       });
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to clear tech conference settings');
+        throw new Error(errorData.error || 'Failed to clear tech conference settings');
       }
+      
       setSuccess('Tech conference settings cleared successfully!');
+      const uuid = await fetchUUID();
       setSettings({
-        id: '',
+        id: uuid,
         name: '',
         start_date: '',
         end_date: '',
@@ -243,35 +229,42 @@ export const AdminTechConferenceSettings: React.FC = () => {
     try {
       setIsRollingOver(true);
       setError(null);
-      let session;
+
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       if (!supabaseUrl) {
         throw new Error('VITE_SUPABASE_URL is not defined in the environment');
       }
+
       try {
         new URL(supabaseUrl);
       } catch (e) {
         throw new Error('VITE_SUPABASE_URL is invalid');
       }
-      const sessionRes = await supabase.auth.getSession();
-      session = sessionRes.data.session;
-      if (!session || !session.access_token) {
-        throw new Error('No active session or access token is missing');
-      }
+
       if (!settings.start_date || !settings.end_date || !settings.registration_end_date) {
         throw new Error('Please set all required dates before rolling over');
       }
-      // [SECURITY] Fetch UUID from Edge Function instead of using generateUUID()
-      const uuidRes = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`);
-      const { uuid } = await uuidRes.json();
-      const id = uuid;
+
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       const newSettings = {
         ...settings,
-        id: id,
         start_date: settings.start_date,
         end_date: settings.end_date,
         registration_end_date: settings.registration_end_date,
       };
+
       const response = await fetch(
         `${supabaseUrl}/functions/v1/rollover`,
         {
@@ -286,32 +279,18 @@ export const AdminTechConferenceSettings: React.FC = () => {
           }),
         }
       );
+
       if (!response.ok) {
         const errorData = await response.json();
-        await logAdminAction(session, {
-          action: 'rollover',
-          outcome: 'failure',
-          error: errorData.message || response.statusText,
-          details: { settings: newSettings }
-        });
-        throw new Error(errorData.message || `Failed to rollover tech conference: ${response.statusText}`);
+        throw new Error(errorData.error || `Failed to rollover tech conference: ${response.statusText}`);
       }
+
       const result = await response.json();
       if (!result.success) {
-        await logAdminAction(session, {
-          action: 'rollover',
-          outcome: 'failure',
-          error: result.error || 'Failed to rollover tech conference',
-          details: { settings: newSettings }
-        });
         throw new Error(result.error || 'Failed to rollover tech conference');
       }
+
       setSuccess('Tech conference rolled over successfully! Previous registrations have been archived.');
-      await logAdminAction(session, {
-        action: 'rollover',
-        outcome: 'success',
-        details: { settings: newSettings }
-      });
       await fetchSettings();
     } catch (error: any) {
       setError(`Failed to rollover tech conference: ${error.message}`);
@@ -321,7 +300,7 @@ export const AdminTechConferenceSettings: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
@@ -382,8 +361,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
           >
             {clearing ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                  <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Clearing...
@@ -460,7 +439,7 @@ export const AdminTechConferenceSettings: React.FC = () => {
                   </label>
                   <div className="mt-1 relative rounded-md shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Clock className="h-5 w-5 text-gray-400" />
+                      <Calendar className="h-5 w-5 text-gray-400" />
                     </div>
                     <input
                       type="date"
@@ -480,7 +459,7 @@ export const AdminTechConferenceSettings: React.FC = () => {
                   </label>
                   <div className="mt-1 relative rounded-md shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Clock className="h-5 w-5 text-gray-400" />
+                      <Calendar className="h-5 w-5 text-gray-400" />
                     </div>
                     <input
                       type="date"
@@ -604,8 +583,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
               >
                 {saving ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                      <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     Saving...
@@ -672,8 +651,8 @@ export const AdminTechConferenceSettings: React.FC = () => {
                 >
                   {isRollingOver ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                        <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Rolling Over...

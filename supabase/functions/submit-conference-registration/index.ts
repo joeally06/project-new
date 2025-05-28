@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 const allowedOrigins = [
   'https://tapt.org',
@@ -78,6 +78,41 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: false, error: errors.join(' ') }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Rate limiting: max 3 submissions per hour per email
+    const rateLimitKey = `conference_registration_${body.email}`;
+    const { data: rateLimit } = await supabaseAdmin
+      .from('rate_limits')
+      .select('count, last_attempt')
+      .eq('key', rateLimitKey)
+      .single();
+
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    if (rateLimit) {
+      if (new Date(rateLimit.last_attempt) > hourAgo && rateLimit.count >= 3) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      await supabaseAdmin
+        .from('rate_limits')
+        .upsert({
+          key: rateLimitKey,
+          count: new Date(rateLimit.last_attempt) > hourAgo ? rateLimit.count + 1 : 1,
+          last_attempt: now.toISOString()
+        });
+    } else {
+      await supabaseAdmin
+        .from('rate_limits')
+        .insert({
+          key: rateLimitKey,
+          count: 1,
+          last_attempt: now.toISOString()
+        });
     }
 
     // Insert main registration

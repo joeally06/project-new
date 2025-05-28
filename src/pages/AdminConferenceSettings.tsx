@@ -28,11 +28,11 @@ export const AdminConferenceSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showRolloverModal, setShowRolloverModal] = useState(false);
-  const [isRollingOver, setIsRollingOver] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [isRollingOver, setIsRollingOver] = useState(false);
   
   const [settings, setSettings] = useState<ConferenceSettings>({
-    id: crypto.randomUUID(),
+    id: '',
     name: '',
     start_date: '',
     end_date: '',
@@ -88,6 +88,36 @@ export const AdminConferenceSettings: React.FC = () => {
     }
   };
 
+  const fetchUUID = async (): Promise<string> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-uuid`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate UUID');
+      }
+
+      const { uuid } = await response.json();
+      return uuid;
+    } catch (error: any) {
+      console.error('Error fetching UUID:', error);
+      throw error;
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     
@@ -103,6 +133,12 @@ export const AdminConferenceSettings: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       // Use Edge Function for upsert (add/update)
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-conference-settings`, {
         method: 'POST',
@@ -114,7 +150,7 @@ export const AdminConferenceSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save conference settings');
+        throw new Error(errorData.error || 'Failed to save conference settings');
       }
       setSuccess('Conference settings saved successfully!');
       await fetchSettings();
@@ -141,11 +177,12 @@ export const AdminConferenceSettings: React.FC = () => {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to clear conference settings');
+        throw new Error(errorData.error || 'Failed to clear conference settings');
       }
       setSuccess('Conference settings cleared successfully!');
+      const uuid = await fetchUUID();
       setSettings({
-        id: crypto.randomUUID(),
+        id: uuid,
         name: '',
         start_date: '',
         end_date: '',
@@ -192,9 +229,14 @@ export const AdminConferenceSettings: React.FC = () => {
         throw new Error('Please set all required dates before rolling over');
       }
 
+      // If no ID exists, fetch a new UUID from the server
+      if (!settings.id) {
+        const uuid = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: uuid }));
+      }
+
       const newSettings = {
         ...settings,
-        id: crypto.randomUUID(),
         start_date: settings.start_date,
         end_date: settings.end_date,
         registration_end_date: settings.registration_end_date,
@@ -217,7 +259,7 @@ export const AdminConferenceSettings: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to rollover conference: ${response.statusText}`);
+        throw new Error(errorData.error || `Failed to rollover conference: ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -296,8 +338,8 @@ export const AdminConferenceSettings: React.FC = () => {
           >
             {clearing ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                  <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Clearing...
@@ -513,8 +555,8 @@ export const AdminConferenceSettings: React.FC = () => {
               >
                 {saving ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                      <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     Saving...
@@ -580,8 +622,8 @@ export const AdminConferenceSettings: React.FC = () => {
                 >
                   {isRollingOver ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                        <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Rolling Over...
