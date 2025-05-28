@@ -30,6 +30,7 @@ export const Members: React.FC = () => {
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const getFieldError = (fieldName: string): string => {
     return errors.find(error => error.field === fieldName)?.message || '';
@@ -82,6 +83,7 @@ export const Members: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrors([]);
+    setConnectionError(null);
 
     const validationErrors = validateMembershipForm(formData);
     if (validationErrors.length > 0) {
@@ -144,10 +146,16 @@ export const Members: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error: any) {
       console.error('Error submitting application:', error);
-      setErrors([{ 
-        field: 'submit', 
-        message: error.message || 'Failed to submit application. Please try again.' 
-      }]);
+      
+      // Check if it's a network error
+      if (error.message === 'Failed to fetch') {
+        setConnectionError('Network error: Unable to connect to the server. Please check your internet connection and try again.');
+      } else {
+        setErrors([{ 
+          field: 'submit', 
+          message: error.message || 'Failed to submit application. Please try again.' 
+        }]);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -275,6 +283,18 @@ export const Members: React.FC = () => {
                   <div className="flex">
                     <div className="ml-3">
                       <p className="text-sm text-red-700">{getFieldError('submit')}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Connection Error */}
+              {connectionError && (
+                <div className="bg-red-50 border-l-4 border-red-400 p-4">
+                  <div className="flex">
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">Connection Error</h3>
+                      <p className="mt-1 text-sm text-red-700">{connectionError}</p>
                     </div>
                   </div>
                 </div>

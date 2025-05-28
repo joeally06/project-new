@@ -3,7 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 const allowedOrigins = [
   'https://tapt.org',
   'https://admin.tapt.org',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'https://localhost:5173'
 ];
 
 const securityHeaders = {
@@ -28,7 +29,7 @@ const sanitizeError = (error: any): string => {
     if (error.message && errorMap[error.message]) return errorMap[error.message];
   }
   
-  return 'An unexpected error occurred. Please try again.';
+  return error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.';
 };
 
 interface MembershipApplication {
@@ -59,7 +60,10 @@ Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     console.log("Handling CORS preflight request");
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204,
+      headers: corsHeaders 
+    });
   }
 
   try {
