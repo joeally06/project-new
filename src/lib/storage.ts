@@ -7,7 +7,7 @@ function getCurrentUserId(): string {
   throw new Error('getCurrentUserId() not implemented. You must provide a secure way to get the user UID.');
 }
 
-export async function getSignedUploadUrl(file: File, folder: string, bucket: 'private' | 'public' = 'private') {
+export async function getSignedUploadUrl(file: File, folder: string, bucket: 'private' | 'public' = 'private', accessToken: string) {
   try {
     // Enforce folder structure for private bucket
     if (bucket === 'private') {
@@ -30,7 +30,7 @@ export async function getSignedUploadUrl(file: File, folder: string, bucket: 'pr
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           fileName: file.name,

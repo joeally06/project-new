@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Edit, MoveUp, MoveDown, Upload, X } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../context/AuthContext';
+import { uploadFile } from '../lib/upload';
 
 interface BoardMember {
   id: string;
@@ -84,32 +84,12 @@ export const AdminBoardMembers: React.FC = () => {
 
   const handleUpload = async () => {
     if (!selectedFile) return;
-
     try {
       setUploading(true);
       setError(null);
-
-      // Create a unique file name
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${uuidv4()}.${fileExt}`;
-
-      // Create a FormData object
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('fileName', fileName);
-
-      // Use fetch to send the file to the server
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to upload image');
-      }
-
-      // Return the relative path to the image
-      const imagePath = fileName;
+      // Use the uploadFile helper to upload to Supabase storage via Edge Function
+      if (!user?.access_token) throw new Error('User not authenticated');
+      const imagePath = await uploadFile(selectedFile, 'board-members', user.access_token, { bucket: 'public' });
       setFormData(prev => ({ ...prev, image: imagePath }));
       setSuccess('Image uploaded successfully!');
       return imagePath;

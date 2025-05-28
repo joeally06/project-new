@@ -24,9 +24,10 @@ const defaultOptions: UploadOptions = {
 export async function uploadFile(
   file: File,
   folder: string,
+  accessToken: string,
   options: UploadOptions = {}
 ): Promise<string> {
-  const { maxSizeBytes, allowedTypes, bucket } = { ...defaultOptions, ...options };
+  const { maxSizeBytes = 10 * 1024 * 1024, allowedTypes = defaultOptions.allowedTypes, bucket = defaultOptions.bucket } = { ...defaultOptions, ...options };
 
   // Validate file size
   if (file.size > maxSizeBytes) {
@@ -40,7 +41,7 @@ export async function uploadFile(
 
   try {
     // Get signed URL and upload file
-    const path = await getSignedUploadUrl(file, folder, bucket);
+    const path = await getSignedUploadUrl(file, folder, bucket, accessToken);
     return path;
   } catch (error) {
     console.error('Error uploading file:', error);
@@ -57,9 +58,9 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function validateFileType(file: File, allowedTypes: string[] = defaultOptions.allowedTypes): boolean {
-  return allowedTypes.includes(file.type);
+  return (allowedTypes ?? defaultOptions.allowedTypes).includes(file.type);
 }
 
 export function validateFileSize(file: File, maxSizeBytes: number = defaultOptions.maxSizeBytes): boolean {
-  return file.size <= maxSizeBytes;
+  return file.size <= (maxSizeBytes ?? defaultOptions.maxSizeBytes);
 }
