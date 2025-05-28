@@ -70,14 +70,21 @@ export const AdminMemberships: React.FC = () => {
   const handleStatusChange = async (applicationId: string, newStatus: 'approved' | 'rejected') => {
     try {
       // Use Edge Function for secure status update
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session || !session.access_token) {
+        throw new Error('No active session');
+      }
+      
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-membership-status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ id: applicationId, status: newStatus })
       });
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to update application status');
