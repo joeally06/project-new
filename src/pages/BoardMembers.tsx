@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { MapPin, Building, Mail, Globe } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { getPublicUrl } from '../lib/storage';
 
 interface BoardMember {
   id: string;
@@ -77,34 +78,41 @@ export const BoardMembers: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {members.map((member) => (
-                <div key={member.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all">
-                  {member.image ? (
-                    <img 
-                      src={`/images/board-members/${member.image}`}
-                      alt={member.name}
-                      className="w-full h-48 object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
-                      <Building className="h-12 w-12 text-gray-400" />
-                    </div>
-                  )}
-                  <div className="p-6">
-                    <h3 className="text-xl font-bold text-secondary">{member.name}</h3>
-                    <p className="text-primary font-medium">{member.title}</p>
-                    {member.district && (
-                      <div className="flex items-center mt-2 text-gray-600">
-                        <MapPin className="h-4 w-4 mr-2" />
-                        <span>{member.district}</span>
+              {members.map((member) => {
+                // Ensure correct path for 'public' bucket with 'board-members/' folder
+                let cleanImage = member.image ? member.image.replace(/^board-members\//, '') : null;
+                const imageUrl = cleanImage ? getPublicUrl('public', `board-members/${cleanImage}`) : null;
+                console.log('Board member image URL:', imageUrl, 'for', member.name, 'image field:', member.image);
+                return (
+                  <div key={member.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all">
+                    {imageUrl ? (
+                      <img 
+                        src={imageUrl}
+                        alt={member.name}
+                        className="w-full h-48 object-cover"
+                        onError={e => { (e.target as HTMLImageElement).src = '/images/board-members/default.png'; }}
+                      />
+                    ) : (
+                      <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                        <Building className="h-12 w-12 text-gray-400" />
                       </div>
                     )}
-                    {member.bio && (
-                      <p className="mt-4 text-gray-600">{member.bio}</p>
-                    )}
+                    <div className="p-6">
+                      <h3 className="text-xl font-bold text-secondary">{member.name}</h3>
+                      <p className="text-primary font-medium">{member.title}</p>
+                      {member.district && (
+                        <div className="flex items-center mt-2 text-gray-600">
+                          <MapPin className="h-4 w-4 mr-2" />
+                          <span>{member.district}</span>
+                        </div>
+                      )}
+                      {member.bio && (
+                        <p className="mt-4 text-gray-600">{member.bio}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

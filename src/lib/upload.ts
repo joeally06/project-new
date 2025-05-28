@@ -35,7 +35,7 @@ export async function uploadFile(
   }
 
   // Validate file type
-  if (!allowedTypes.includes(file.type)) {
+  if (!(allowedTypes && allowedTypes.includes(file.type))) {
     throw new Error('File type not allowed');
   }
 
@@ -57,10 +57,12 @@ export function formatFileSize(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
-export function validateFileType(file: File, allowedTypes: string[] = defaultOptions.allowedTypes): boolean {
-  return (allowedTypes ?? defaultOptions.allowedTypes).includes(file.type);
+export function validateFileType(file: File, allowedTypes?: string[]): boolean {
+  const types: string[] = allowedTypes ?? defaultOptions.allowedTypes ?? [];
+  return types.includes(file.type);
 }
 
-export function validateFileSize(file: File, maxSizeBytes: number = defaultOptions.maxSizeBytes): boolean {
-  return file.size <= (maxSizeBytes ?? defaultOptions.maxSizeBytes);
+export function validateFileSize(file: File, maxSizeBytes?: number): boolean {
+  const sizeLimit = maxSizeBytes ?? defaultOptions.maxSizeBytes ?? 10 * 1024 * 1024;
+  return file.size <= sizeLimit;
 }

@@ -153,27 +153,18 @@ export const AdminBoardMembers: React.FC = () => {
     try {
       // Get the member to delete their image if it exists
       const memberToDelete = members.find(m => m.id === id);
-      if (memberToDelete?.image) {
-        // Delete the image file
-        const response = await fetch(`/api/delete-image/${memberToDelete.image}`, {
-          method: 'DELETE'
-        });
-        if (!response.ok) {
-          console.error('Failed to delete image file');
-        }
-      }
-      // Use Edge Function for delete
+      // Use Edge Function for delete (handles both DB and image)
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-board-member`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user?.access_token}`
         },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id, image: memberToDelete?.image || undefined })
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete board member');
+        throw new Error(errorData.error || errorData.message || 'Failed to delete board member');
       }
       setSuccess('Board member deleted successfully!');
       fetchMembers();

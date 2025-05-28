@@ -15,18 +15,65 @@ const securityHeaders = {
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin') || '';
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : '';
   const corsHeaders = {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     ...securityHeaders
   };
 
+  // Always return CORS headers for all responses
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    // Preflight response must include all CORS headers
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders
+    });
   }
 
   try {
+    if (req.method === 'DELETE') {
+      // Parse JSON body for id and image info
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'No authorization header' }), { status: 401, headers: corsHeaders });
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
+      );
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+      }
+      const body = await req.json();
+      if (!body.id) {
+        return new Response(JSON.stringify({ error: 'Missing board member id' }), { status: 400, headers: corsHeaders });
+      }
+      // Delete board member
+      const { error: deleteError } = await supabaseAdmin.from('board_members').delete().eq('id', body.id);
+      if (deleteError) {
+        return new Response(JSON.stringify({ error: deleteError.message }), { status: 400, headers: corsHeaders });
+      }
+      // Optionally delete image from storage if image info provided
+      if (body.image) {
+        const { error: storageError } = await supabaseAdmin.storage.from('board-members').remove([body.image]);
+        if (storageError) {
+          // Log but do not block deletion
+          console.error('Storage delete error:', storageError.message);
+        }
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    }
+
     if (req.method !== 'POST') {
       return new Response('Method not allowed', { status: 405, headers: corsHeaders });
     }
