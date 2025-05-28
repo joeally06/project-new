@@ -83,7 +83,8 @@ export const News: React.FC = () => {
           .select('*')
           .eq('type', 'news')
           .eq('status', 'published')
-          .order('date', { ascending: false, nullsLast: true });
+          .order('date', { ascending: false, nullsLast: true })
+          .order('created_at', { ascending: false });
 
         if (error) throw error;
         setNewsItems(data || []);
