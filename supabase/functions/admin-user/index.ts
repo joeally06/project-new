@@ -3,7 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 const allowedOrigins = [
   'https://tapt.org',
   'https://admin.tapt.org',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'https://localhost:5173'
 ];
 
 const securityHeaders = {
@@ -51,31 +52,51 @@ async function logAdminAction(supabaseAdmin: any, entry: AdminLogEntry) {
     // TODO: Integrate alerting/monitoring for repeated failures
   } catch (e) {
     // Logging failure should not block main flow
+    console.error("Failed to log admin action:", e);
   }
 }
 
 Deno.serve(async (req) => {
+  console.log("Admin user function called");
+  
   let user: any = undefined;
   let supabaseAdmin: any = undefined;
 
   const origin = req.headers.get('Origin') || '';
-  corsHeaders['Access-Control-Allow-Origin'] = allowedOrigins.includes(origin) ? origin : '';
+  const responseCorsHeaders = {
+    ...corsHeaders,
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '*'
+  };
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    console.log("Handling CORS preflight request");
+    return new Response(null, { 
+      status: 204,
+      headers: responseCorsHeaders 
+    });
   }
 
   try {
+    console.log(`Processing ${req.method} request for admin user`);
+    
     // Verify request method
     if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
       throw new Error('Method not allowed');
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase environment variables");
+      throw new Error('Server configuration error: Missing required environment variables');
+    }
+
     // Create authenticated Supabase client using service role key
     supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      supabaseUrl,
+      supabaseServiceKey,
       {
         auth: {
           autoRefreshToken: false,
@@ -110,6 +131,8 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === 'GET') {
+      console.log("Fetching users list");
+      
       // Fetch all users
       const { data: authUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
       
@@ -143,6 +166,7 @@ Deno.serve(async (req) => {
         outcome: 'success',
       });
 
+      console.log(`Found ${users.length} users`);
       return new Response(
         JSON.stringify({ 
           success: true,
@@ -150,14 +174,27 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...responseCorsHeaders,
             'Content-Type': 'application/json',
           },
         }
       );
     } else if (req.method === 'POST') {
+      console.log("Creating new user");
+      
       // Create new user
-      const payload: CreateUserPayload = await req.json();
+      let payload: CreateUserPayload;
+      try {
+        payload = await req.json();
+        console.log("Received payload:", JSON.stringify({
+          email: payload.email,
+          role: payload.role
+          // Omitting password for security
+        }));
+      } catch (error) {
+        console.error("Error parsing request JSON:", error);
+        throw new Error('Invalid request format: Unable to parse JSON');
+      }
 
       // Check if user already exists in auth
       const { data: existingUsers } = await supabaseAdmin
@@ -210,6 +247,7 @@ Deno.serve(async (req) => {
         details: { created_user: newUser.user.id, email: payload.email, role: payload.role }
       });
 
+      console.log("User created successfully");
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -221,14 +259,23 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...responseCorsHeaders,
             'Content-Type': 'application/json',
           },
         }
       );
     } else if (req.method === 'DELETE') {
+      console.log("Deleting user");
+      
       // Delete user
-      const payload: DeleteUserPayload = await req.json();
+      let payload: DeleteUserPayload;
+      try {
+        payload = await req.json();
+        console.log("Received payload:", JSON.stringify(payload));
+      } catch (error) {
+        console.error("Error parsing request JSON:", error);
+        throw new Error('Invalid request format: Unable to parse JSON');
+      }
 
       // First, verify the user exists in auth
       const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(
@@ -311,6 +358,7 @@ Deno.serve(async (req) => {
         details: { deleted_user: payload.userId }
       });
 
+      console.log("User deleted successfully");
       return new Response(
         JSON.stringify({ 
           success: true,
@@ -318,7 +366,7 @@ Deno.serve(async (req) => {
         }),
         { 
           headers: {
-            ...corsHeaders,
+            ...responseCorsHeaders,
             'Content-Type': 'application/json',
           },
         }
@@ -326,7 +374,7 @@ Deno.serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error("Error in admin-user function:", error);
 
     // Try to log the failed action if user and supabaseAdmin are available
     try {
@@ -335,20 +383,22 @@ Deno.serve(async (req) => {
           action: req.method === 'GET' ? 'list_users' : req.method === 'POST' ? 'create_user' : req.method === 'DELETE' ? 'delete_user' : 'unknown',
           user_id: user.id,
           outcome: 'failure',
-          error: error.message,
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
-    } catch {}
+    } catch (logError) {
+      console.error("Failed to log admin action:", logError);
+    }
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : 'An unexpected error occurred',
       }),
       { 
         status: 400,
         headers: {
-          ...corsHeaders,
+          ...responseCorsHeaders,
           'Content-Type': 'application/json',
         },
       }
