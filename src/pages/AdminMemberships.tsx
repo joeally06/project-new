@@ -69,14 +69,29 @@ export const AdminMemberships: React.FC = () => {
 
   const handleStatusChange = async (applicationId: string, newStatus: 'approved' | 'rejected') => {
     try {
-      // Use Edge Function for secure status update
-      const { data: { session } } = await supabase.auth.getSession();
+      setError(null);
+      setSuccess(null);
+      
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
       
       if (!session || !session.access_token) {
         throw new Error('No active session');
       }
       
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-membership-status`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+      
+      console.log(`Updating application ${applicationId} status to ${newStatus}`);
+      
+      // Use Edge Function for secure status update
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-membership-status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -86,8 +101,8 @@ export const AdminMemberships: React.FC = () => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update application status');
+        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+        throw new Error(errorData.message || `Request failed with status ${response.status}`);
       }
 
       setApplications(prev => 
@@ -99,7 +114,7 @@ export const AdminMemberships: React.FC = () => {
       setSuccess(`Application ${newStatus} successfully`);
     } catch (error: any) {
       console.error('Error updating application status:', error);
-      setError(`Failed to update application status: ${error.message}`);
+      setError(`Error updating application status: ${error.message}`);
     }
   };
 
