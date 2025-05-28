@@ -127,8 +127,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
     setSuccess(null);
 
     try {
-      // If no ID exists, fetch a new UUID from the server
-      if (!settings.id) {
+      // If no ID exists or ID is empty, fetch a new UUID from the server
+      if (!settings.id || settings.id.trim() === '') {
         const uuid = await fetchUUID();
         setSettings(prev => ({ ...prev, id: uuid }));
       }
@@ -139,7 +139,11 @@ export const AdminHallOfFameSettings: React.FC = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user?.access_token}`
         },
-        body: JSON.stringify({ ...settings, updated_at: new Date().toISOString() })
+        body: JSON.stringify({ 
+          ...settings, 
+          id: settings.id.trim() === '' ? await fetchUUID() : settings.id,
+          updated_at: new Date().toISOString() 
+        })
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -221,10 +225,16 @@ export const AdminHallOfFameSettings: React.FC = () => {
       }
 
       // Prepare new settings
-      const uuid = await fetchUUID();
+      // If no ID exists or ID is empty, fetch a new UUID from the server
+      let settingsId = settings.id;
+      if (!settingsId || settingsId.trim() === '') {
+        settingsId = await fetchUUID();
+        setSettings(prev => ({ ...prev, id: settingsId }));
+      }
+      
       const newSettings = {
         ...settings,
-        id: uuid,
+        id: settingsId,
         start_date: settings.start_date,
         end_date: settings.end_date,
       };
@@ -326,8 +336,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
           >
             {clearing ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                  <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Clearing...
@@ -478,8 +488,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
               >
                 {saving ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                      <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     Saving...
@@ -537,8 +547,8 @@ export const AdminHallOfFameSettings: React.FC = () => {
                 >
                   {isRollingOver ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
-                        <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Rolling Over...
