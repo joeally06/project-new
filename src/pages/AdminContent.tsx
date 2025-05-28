@@ -155,12 +155,31 @@ export const AdminContent: React.FC = () => {
             .getPublicUrl(filePath);
           imagePath = publicUrl;
         }
+
+        // Get the current session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          throw new Error(`Session error: ${sessionError.message}`);
+        }
+        
+        if (!session || !session.access_token) {
+          throw new Error('No active session');
+        }
+        
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        if (!supabaseUrl) {
+          throw new Error('VITE_SUPABASE_URL is not defined');
+        }
+        
+        console.log(`Submitting content to: ${supabaseUrl}/functions/v1/admin-content`);
+        
         // Use Edge Function for secure content upsert
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-content`, {
+        const response = await fetch(`${supabaseUrl}/functions/v1/admin-content`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({
             ...formData,
@@ -169,10 +188,17 @@ export const AdminContent: React.FC = () => {
             id: editingItem?.id // Pass id for update, undefined for insert
           })
         });
+        
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Failed to save content');
+          const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+          throw new Error(errorData.message || `Request failed with status ${response.status}`);
         }
+        
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save content');
+        }
+        
         setSuccess(`Content ${editingItem ? 'updated' : 'added'} successfully!`);
         fetchContent();
       }
@@ -190,42 +216,58 @@ export const AdminContent: React.FC = () => {
       });
     } catch (error: any) {
       console.error('Error saving content:', error);
-      setError(`Failed to save content: ${error.message}`);
+      setError(`Error saving content: ${error.message}`);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this item?')) return;
     try {
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+      
+      if (!session || !session.access_token) {
+        throw new Error('No active session');
+      }
+      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL is not defined');
+      }
+      
       if (selectedType === 'resource') {
         // Use Edge Function for secure resource deletion
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-resource`, {
+        const response = await fetch(`${supabaseUrl}/functions/v1/admin-resource`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({ id })
         });
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Failed to delete resource');
+          const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+          throw new Error(errorData.message || `Request failed with status ${response.status}`);
         }
         setSuccess('Resource deleted successfully!');
         fetchResources();
       } else {
         // Use Edge Function for secure content deletion
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-content`, {
+        const response = await fetch(`${supabaseUrl}/functions/v1/admin-content`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({ id })
         });
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Failed to delete content');
+          const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+          throw new Error(errorData.message || `Request failed with status ${response.status}`);
         }
         setSuccess('Content deleted successfully!');
         fetchContent();
@@ -259,6 +301,7 @@ export const AdminContent: React.FC = () => {
 
   return (
     <div className="pt-16">
+      {/* Hero Section */}
       <section className="bg-secondary text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="flex items-center space-x-4">
