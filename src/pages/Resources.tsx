@@ -22,6 +22,31 @@ interface Resource {
 
 const PAGE_SIZE = 12;
 
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+};
+
+const getCategoryIcon = (category: string) => {
+  switch(category) {
+    case 'manuals':
+      return <Book className="h-6 w-6" />;
+    case 'forms':
+      return <FileCheck className="h-6 w-6" />;
+    case 'laws':
+      return <FileText className="h-6 w-6" />;
+    case 'training':
+      return <Folder className="h-6 w-6" />;
+    case 'safety':
+      return <FileText className="h-6 w-6" />;
+    default:
+      return <FileText className="h-6 w-6" />;
+  }
+};
+
 const ResourceCard: React.FC<{ resource: Resource; onDownload: (resource: Resource) => void; style?: React.CSSProperties }> = ({ resource, onDownload, style }) => (
   <div style={style} className="py-6 flex flex-col md:flex-row md:items-center">
     <div className="flex-shrink-0 mr-4 mb-4 md:mb-0 bg-primary/10 p-4 rounded-md">
@@ -108,31 +133,6 @@ export const Resources: React.FC = () => {
       console.error('Error downloading resource:', error);
       alert('Sorry, this resource is currently unavailable. Please try again later.');
     }
-  };
-
-  const getCategoryIcon = (category: string) => {
-    switch(category) {
-      case 'manuals':
-        return <Book className="h-6 w-6" />;
-      case 'forms':
-        return <FileCheck className="h-6 w-6" />;
-      case 'laws':
-        return <FileText className="h-6 w-6" />;
-      case 'training':
-        return <Folder className="h-6 w-6" />;
-      case 'safety':
-        return <FileText className="h-6 w-6" />;
-      default:
-        return <FileText className="h-6 w-6" />;
-    }
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
