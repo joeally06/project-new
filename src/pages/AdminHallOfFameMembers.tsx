@@ -48,6 +48,7 @@ export const AdminHallOfFameMembers: React.FC = () => {
     achievements: [],
     bio: ''
   });
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
 
   useEffect(() => {
     checkAdminStatus();
@@ -104,20 +105,41 @@ export const AdminHallOfFameMembers: React.FC = () => {
     }
   };
 
+  // Handle image file selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedImage(e.target.files[0]);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
     try {
+      let imageUrl = formData.image_url || '';
+      if (selectedImage) {
+        const fileExt = selectedImage.name.split('.').pop();
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
+        // Upload to the 'public' bucket, in the 'hall_of_fame' folder
+        const { error: uploadError } = await supabase.storage
+          .from('public')
+          .upload(`hall_of_fame/${fileName}`, selectedImage);
+        if (uploadError) throw uploadError;
+        const { data } = supabase.storage
+          .from('public')
+          .getPublicUrl(`hall_of_fame/${fileName}`);
+        imageUrl = data.publicUrl;
+      }
       // Use Edge Function for secure member creation
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-hof-member`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, image_url: imageUrl })
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -141,6 +163,7 @@ export const AdminHallOfFameMembers: React.FC = () => {
         achievements: [],
         bio: ''
       });
+      setSelectedImage(null);
       fetchMembers();
     } catch (error: any) {
       console.error('Error adding member:', error);
@@ -157,7 +180,7 @@ export const AdminHallOfFameMembers: React.FC = () => {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
         },
         body: JSON.stringify({ id })
       });
@@ -299,13 +322,16 @@ export const AdminHallOfFameMembers: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Image URL</label>
+                  <label className="block text-sm font-medium text-gray-700">Image</label>
                   <input
-                    type="url"
-                    value={formData.image_url || ''}
-                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
                   />
+                  {selectedImage && (
+                    <p className="mt-2 text-sm text-gray-500">Selected: {selectedImage.name}</p>
+                  )}
                 </div>
 
                 <div>

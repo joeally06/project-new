@@ -89,12 +89,12 @@ export const BoardMembers: React.FC = () => {
                       <img 
                         src={imageUrl}
                         alt={member.name}
-                        className="w-full h-48 object-cover"
+                        className="w-full h-60 object-cover" // Increased height from h-48 to h-56
                         onError={e => { (e.target as HTMLImageElement).src = '/images/board-members/default.png'; }}
                       />
                     ) : (
-                      <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
-                        <Building className="h-12 w-12 text-gray-400" />
+                      <div className="w-full h-56 bg-gray-200 flex items-center justify-center"> {/* Increased height from h-48 to h-56 */}
+                        <Building className="h-14 w-14 text-gray-400" /> {/* Increased icon size from h-12 w-12 to h-14 w-14 */}
                       </div>
                     )}
                     <div className="p-6">

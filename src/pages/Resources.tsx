@@ -31,19 +31,25 @@ const formatFileSize = (bytes: number): string => {
 };
 
 const getCategoryIcon = (category: string) => {
-  switch(category) {
-    case 'manuals':
-      return <Book className="h-6 w-6" />;
-    case 'forms':
-      return <FileCheck className="h-6 w-6" />;
-    case 'laws':
-      return <FileText className="h-6 w-6" />;
-    case 'training':
-      return <Folder className="h-6 w-6" />;
-    case 'safety':
-      return <FileText className="h-6 w-6" />;
-    default:
-      return <FileText className="h-6 w-6" />;
+  try {
+    switch(category) {
+      case 'manuals':
+        return <Book className="h-6 w-6" />;
+      case 'forms':
+        return <FileCheck className="h-6 w-6" />;
+      case 'laws':
+        return <FileText className="h-6 w-6" />;
+      case 'training':
+        return <Folder className="h-6 w-6" />;
+      case 'safety':
+        return <FileText className="h-6 w-6" />;
+      default:
+        console.warn('Unknown category for icon:', category);
+        return <FileText className="h-6 w-6" />;
+    }
+  } catch (e) {
+    console.error('Error rendering icon for category', category, e);
+    return null;
   }
 };
 
@@ -105,10 +111,13 @@ export const Resources: React.FC = () => {
       if (activeCategory !== 'all') {
         query = query.eq('category', activeCategory);
       }
+      console.log('Fetching resources with query:', { from, to, searchQuery, activeCategory });
       const { data, error, count } = await query;
+      console.log('Supabase response:', { data, error, count });
       if (error) throw error;
       setResources(data || []);
       setTotalCount(count || 0);
+      console.log('Resources set:', data);
     } catch (err) {
       console.error('Error fetching resources:', err);
       setError('Failed to load resources');
@@ -199,6 +208,14 @@ export const Resources: React.FC = () => {
             </div>
             {/* Results */}
             <div className="space-y-6">
+              {/* Debug output for troubleshooting */}
+              <div className="bg-yellow-100 text-yellow-800 p-2 text-xs rounded mb-2">
+                <div><b>Debug:</b></div>
+                <div>Resources: {JSON.stringify(resources)}</div>
+                <div>Error: {JSON.stringify(error)}</div>
+                <div>Supabase URL: {supabase?.restUrl || 'N/A'}</div>
+                <div>Supabase Key: {supabase?.auth?.api?.getUrl ? supabase.auth.api.getUrl() : 'N/A'}</div>
+              </div>
               {loading ? (
                 <div className="flex justify-center items-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>

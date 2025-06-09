@@ -86,6 +86,40 @@ Deno.serve(async (req) => {
     if (req.method === 'POST') {
       const body = await req.json();
 
+      // If this is a member creation (not settings), check for member fields
+      if (body.name && body.induction_year && body.bio) {
+        // Validate required member fields
+        const requiredMemberFields = ['name', 'title', 'induction_year', 'bio'];
+        for (const field of requiredMemberFields) {
+          if (!body[field]) {
+            throw new Error(`Missing required field: ${field}`);
+          }
+        }
+        // Insert new Hall of Fame member
+        const { error: insertError } = await supabaseAdmin
+          .from('hall_of_fame_members')
+          .insert({
+            name: body.name,
+            title: body.title,
+            role: body.role ?? null,
+            organization: body.organization ?? null,
+            location: body.location ?? null,
+            contact_info: body.contact_info ?? null,
+            image_url: body.image_url ?? null,
+            website: body.website ?? null,
+            notes: body.notes ?? null,
+            term: body.term ?? null,
+            induction_year: body.induction_year,
+            achievements: body.achievements ?? [],
+            bio: body.bio
+          });
+        if (insertError) throw insertError;
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+
       // Validate required fields
       const requiredFields = ['name', 'start_date', 'end_date', 'nomination_instructions', 'eligibility_criteria'];
       for (const field of requiredFields) {
