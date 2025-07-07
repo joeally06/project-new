@@ -168,6 +168,8 @@ const TechConferenceRegistration: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log("Form submission initiated");
+    
     if (!conferenceSettings?.is_active) {
       setFormStatus({
         success: false,
@@ -185,6 +187,7 @@ const TechConferenceRegistration: React.FC = () => {
     }
 
     if (!turnstileToken) {
+      console.log("Turnstile token missing");
       setFormStatus({
         success: false,
         message: 'Please complete the security verification.'
@@ -196,6 +199,7 @@ const TechConferenceRegistration: React.FC = () => {
     setFormStatus({});
 
     try {
+      console.log("Preparing to submit with Turnstile token:", turnstileToken ? "Token present" : "No token");
       // Get the Supabase URL from environment variables
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       if (!supabaseUrl) {
@@ -220,6 +224,7 @@ const TechConferenceRegistration: React.FC = () => {
       };
 
       // Make the request to the Edge Function
+      console.log("Submitting to Edge Function with Turnstile token");
       const response = await fetch(`${supabaseUrl}/functions/v1/submit-tech-conference-registration`, {
         method: 'POST',
         headers: {
@@ -231,15 +236,18 @@ const TechConferenceRegistration: React.FC = () => {
 
       // Check if the request was successful
       if (!response.ok) {
+        console.log("Edge Function response not OK:", response.status);
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to submit registration');
       }
 
       const result = await response.json();
       if (!result.success) {
+        console.log("Edge Function returned success: false");
         throw new Error(result.error || 'Failed to submit registration');
       }
 
+      console.log("Registration submitted successfully");
       setFormStatus({
         success: true,
         message: 'Registration submitted successfully! Please mail your payment as instructed.'
@@ -261,6 +269,7 @@ const TechConferenceRegistration: React.FC = () => {
       });
     } catch (error: any) {
       console.error('Error submitting registration:', error);
+      console.log("Error details:", error.message);
       setFormStatus({
         success: false,
         message: `Error submitting registration: ${error.message}`
@@ -736,20 +745,22 @@ const TechConferenceRegistration: React.FC = () => {
               {/* Turnstile CAPTCHA */}
               <div className="mb-8">
                 <h2 className="text-xl font-semibold text-secondary mb-6">Security Verification</h2>
-                <div className="flex flex-col items-start">
+                <div className="flex flex-col items-center">
                   <Turnstile
-                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'}
                     onSuccess={handleTurnstileSuccess}
                     onError={handleTurnstileError}
                     onExpire={handleTurnstileExpire}
                     options={{
                       theme: 'light',
-                      size: 'normal'
+                      size: 'normal',
+                      refreshExpired: 'auto'
                     }}
                   />
                   {turnstileError && (
-                    <p className="mt-2 text-sm text-red-600">{turnstileError}</p>
+                    <p className="mt-2 text-sm text-center text-red-600">{turnstileError}</p>
                   )}
+                  <p className="mt-2 text-xs text-gray-500 text-center">Please complete the security verification above before submitting.</p>
                 </div>
               </div>
 
