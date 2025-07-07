@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { supabase } from '../lib/supabase';
 import { Mail, Phone, MapPin, DollarSign, Building, User, Users, Calendar, AlertCircle, X } from 'lucide-react';
 
@@ -48,6 +49,8 @@ const TechConferenceRegistration: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isRegistrationClosed, setIsRegistrationClosed] = useState(false);
   const [showUnavailablePopup, setShowUnavailablePopup] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConferenceSettings();
@@ -147,6 +150,21 @@ const TechConferenceRegistration: React.FC = () => {
     });
   };
 
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(null);
+  };
+
+  const handleTurnstileError = () => {
+    setTurnstileToken(null);
+    setTurnstileError('Turnstile verification failed. Please try again.');
+  };
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null);
+    setTurnstileError('Turnstile verification expired. Please verify again.');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -162,6 +180,14 @@ const TechConferenceRegistration: React.FC = () => {
       setFormStatus({
         success: false,
         message: 'Registration is closed. The deadline has passed.'
+      });
+      return;
+    }
+
+    if (!turnstileToken) {
+      setFormStatus({
+        success: false,
+        message: 'Please complete the security verification.'
       });
       return;
     }
@@ -189,7 +215,8 @@ const TechConferenceRegistration: React.FC = () => {
         phone: formData.phone,
         totalAttendees: formData.totalAttendees,
         totalAmount,
-        additionalAttendees: formData.additionalAttendees
+        additionalAttendees: formData.additionalAttendees,
+        captchaToken: turnstileToken
       };
 
       // Make the request to the Edge Function
@@ -706,11 +733,31 @@ const TechConferenceRegistration: React.FC = () => {
                 </div>
               )}
 
+              {/* Turnstile CAPTCHA */}
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-secondary mb-6">Security Verification</h2>
+                <div className="flex flex-col items-start">
+                  <Turnstile
+                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                    onSuccess={handleTurnstileSuccess}
+                    onError={handleTurnstileError}
+                    onExpire={handleTurnstileExpire}
+                    options={{
+                      theme: 'light',
+                      size: 'normal'
+                    }}
+                  />
+                  {turnstileError && (
+                    <p className="mt-2 text-sm text-red-600">{turnstileError}</p>
+                  )}
+                </div>
+              </div>
+
               {/* Submit Button */}
               <div>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !turnstileToken}
                   className="w-full inline-flex justify-center py-3 px-6 border border-transparent shadow-sm text-base font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
                 >
                   {isSubmitting ? (

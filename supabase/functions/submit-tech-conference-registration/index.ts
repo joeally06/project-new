@@ -104,31 +104,37 @@ Deno.serve(async (req) => {
       );
     }
 
-    // CAPTCHA verification
+    // Turnstile verification
     const captchaToken = body.captchaToken;
     if (!captchaToken) {
       return new Response(
-        JSON.stringify({ success: false, error: 'CAPTCHA verification failed. Please try again.' }),
+        JSON.stringify({ success: false, error: 'Turnstile verification failed. Please try again.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    // Use globalThis.Deno for Deno.env.get in Edge Functions
-    const recaptchaSecret = (typeof Deno !== 'undefined' ? Deno.env.get('RECAPTCHA_SECRET_KEY') : undefined) || (typeof globalThis !== 'undefined' && globalThis.Deno ? globalThis.Deno.env.get('RECAPTCHA_SECRET_KEY') : undefined);
-    if (!recaptchaSecret) {
+    
+    // Verify Turnstile token using the verify-turnstile Edge Function
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    if (!supabaseUrl) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Server misconfiguration: CAPTCHA secret missing.' }),
+        JSON.stringify({ success: false, error: 'Server misconfiguration: Supabase URL missing.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    const captchaVerifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+    
+    const turnstileVerifyRes = await fetch(`${supabaseUrl}/functions/v1/verify-turnstile`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `secret=${encodeURIComponent(recaptchaSecret)}&response=${encodeURIComponent(captchaToken)}`
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+      },
+      body: JSON.stringify({ token: captchaToken })
     });
-    const captchaVerifyData = await captchaVerifyRes.json();
-    if (!captchaVerifyData.success) {
+    
+    const turnstileVerifyData = await turnstileVerifyRes.json();
+    if (!turnstileVerifyData.success) {
       return new Response(
-        JSON.stringify({ success: false, error: 'CAPTCHA verification failed. Please try again.' }),
+        JSON.stringify({ success: false, error: 'Turnstile verification failed. Please try again.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
