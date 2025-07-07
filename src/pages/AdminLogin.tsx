@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { supabase, testSupabaseConnection } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail } from 'lucide-react';
@@ -12,6 +13,25 @@ export const AdminLogin: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
+
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(false);
+    console.log('Turnstile verified successfully');
+  };
+
+  const handleTurnstileError = () => {
+    setTurnstileError(true);
+    setTurnstileToken(null);
+    console.error('Turnstile verification failed');
+  };
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null);
+    console.warn('Turnstile token expired');
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
@@ -19,21 +39,45 @@ export const AdminLogin: React.FC = () => {
       [e.target.name]: e.target.value
     }));
   };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if Turnstile is completed
+    if (!turnstileToken) {
+      setError('Please complete the security verification');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      // Step 1: Test connection first
+      // Step 1: Verify Turnstile token with backend
+      console.log('Verifying Turnstile token...');
+      const { data: verificationResult, error: verifyError } = await supabase.functions.invoke('verify-turnstile', {
+        body: { token: turnstileToken }
+      });
+
+      if (verifyError) {
+        console.error('Turnstile verification error:', verifyError);
+        throw new Error('Security verification failed. Please try again.');
+      }
+
+      if (!verificationResult?.success) {
+        console.error('Turnstile verification failed:', verificationResult);
+        throw new Error('Security verification failed. Please refresh and try again.');
+      }
+
+      console.log('Turnstile verified successfully, proceeding with login...');
+
+      // Step 2: Test connection
       const { success: connectionSuccess, error: connectionError } = await testSupabaseConnection();
       if (!connectionSuccess) {
         throw new Error(connectionError?.message || 'Unable to connect to the server. Please check your internet connection and try again.');
       }
 
-      // Step 2: Authentication
+      // Step 3: Authentication
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password
@@ -172,13 +216,32 @@ export const AdminLogin: React.FC = () => {
                     onChange={handleChange}
                     className="appearance-none block w-full pl-10 px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary"
                   />
-                </div>
+                </div>              </div>
+
+              {/* Turnstile Security Verification */}
+              <div className="flex justify-center">
+                <Turnstile
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'}
+                  onSuccess={handleTurnstileSuccess}
+                  onError={handleTurnstileError}
+                  onExpire={handleTurnstileExpire}
+                  options={{
+                    theme: 'light',
+                    size: 'normal',
+                  }}
+                />
               </div>
+
+              {turnstileError && (
+                <div className="text-red-600 text-sm text-center bg-red-50 border border-red-200 rounded-md p-3">
+                  Security verification failed. Please try again.
+                </div>
+              )}
 
               <div>
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || !turnstileToken}
                   className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-70"
                 >
                   {isLoading ? (
