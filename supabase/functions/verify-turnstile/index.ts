@@ -22,7 +22,9 @@ serve(async (req) => {
           status: 400 
         }
       )
-    }    const secretKey = Deno.env.get('TURNSTILE_SECRET_KEY')
+    }
+    
+    const secretKey = Deno.env.get('TURNSTILE_SECRET_KEY')
     if (!secretKey) {
       console.error('TURNSTILE_SECRET_KEY not found in environment')
       return new Response(
