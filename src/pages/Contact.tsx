@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { Mail, Phone, MapPin, Send, AlertCircle, Clock } from 'lucide-react';
 import { getSiteSetting } from '../lib/siteSettings';
 import { supabase } from '../lib/supabase';
@@ -19,6 +20,8 @@ export const Contact: React.FC = () => {
     error: false,
     loading: false
   });
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -49,8 +52,33 @@ export const Contact: React.FC = () => {
     setFormState(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(false);
+  };
+
+  const handleTurnstileError = () => {
+    setTurnstileToken(null);
+    setTurnstileError(true);
+  };
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!turnstileToken) {
+      setFormState(prev => ({
+        ...prev,
+        error: true,
+        loading: false,
+        submitted: false
+      }));
+      return;
+    }
+    
     setFormState(prev => ({ ...prev, loading: true, error: false }));
 
     try {
@@ -66,7 +94,8 @@ export const Contact: React.FC = () => {
         email: formState.email,
         phone: formState.phone || undefined,
         district: formState.district || undefined,
-        message: formState.message
+        message: formState.message,
+        captchaToken: turnstileToken
       };
 
       // Make the request to the Edge Function
@@ -314,11 +343,32 @@ export const Contact: React.FC = () => {
                     ></textarea>
                   </div>
 
+                  {/* Turnstile CAPTCHA */}
+                  <div className="mt-6">
+                    <div className="flex flex-col items-center">
+                      <Turnstile
+                        siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'}
+                        onSuccess={handleTurnstileSuccess}
+                        onError={handleTurnstileError}
+                        onExpire={handleTurnstileExpire}
+                        options={{
+                          theme: 'light',
+                          size: 'normal',
+                          refreshExpired: 'auto'
+                        }}
+                      />
+                      {turnstileError && (
+                        <p className="mt-2 text-sm text-center text-red-600">Security verification failed. Please try again.</p>
+                      )}
+                      <p className="mt-2 text-xs text-gray-500 text-center">Please complete the security verification above before submitting.</p>
+                    </div>
+                  </div>
+
                   {/* Submit Button */}
                   <div>
                     <button
                       type="submit"
-                      disabled={formState.loading}
+                      disabled={formState.loading || !turnstileToken}
                       className="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-70"
                     >
                       {formState.loading ? (

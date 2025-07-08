@@ -147,6 +147,30 @@ Deno.serve(async (req) => {
       throw new Error('Invalid email format');
     }
 
+    // Turnstile verification
+    const captchaToken = payload.captchaToken;
+    if (!captchaToken) {
+      throw new Error('Turnstile verification failed. Please try again.');
+    }
+    
+    // Verify Turnstile token using the verify-turnstile Edge Function
+    const turnstileVerifyRes = await fetch(
+      `${supabaseUrl}/functions/v1/verify-turnstile`,
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ token: captchaToken })
+      }
+    );
+    
+    const turnstileVerifyData = await turnstileVerifyRes.json();
+    if (!turnstileVerifyData.success) {
+      throw new Error('Turnstile verification failed. Please try again.');
+    }
+
     // Check for rate limiting
     const rateLimitKey = `exhibitor_registration_${payload.email}`;
     const { data: rateLimit } = await supabaseAdmin

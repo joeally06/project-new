@@ -116,6 +116,30 @@ Deno.serve(async (req) => {
       throw new Error('Nomination reason exceeds maximum length of 500 characters');
     }
 
+    // Turnstile verification
+    const captchaToken = payload.captchaToken;
+    if (!captchaToken) {
+      throw new Error('Turnstile verification failed. Please try again.');
+    }
+    
+    // Verify Turnstile token using the verify-turnstile Edge Function
+    const turnstileVerifyRes = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/verify-turnstile`,
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({ token: captchaToken })
+      }
+    );
+    
+    const turnstileVerifyData = await turnstileVerifyRes.json();
+    if (!turnstileVerifyData.success) {
+      throw new Error('Turnstile verification failed. Please try again.');
+    }
+
     // Check for rate limiting
     const rateLimitKey = `nomination_${payload.supervisor_email}`;
     const { data: rateLimit } = await supabaseAdmin

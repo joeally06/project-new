@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { supabase } from '../lib/supabase';
 import { Mail, Phone, MapPin, Building, User, AlertCircle, Briefcase, FileText } from 'lucide-react';
 import { handleError } from '../lib/errors';
@@ -45,6 +46,8 @@ const ExhibitorRegistration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRegistrationClosed, setIsRegistrationClosed] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -100,6 +103,20 @@ const ExhibitorRegistration: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(false);
+  };
+
+  const handleTurnstileError = () => {
+    setTurnstileToken(null);
+    setTurnstileError(true);
+  };
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -115,6 +132,14 @@ const ExhibitorRegistration: React.FC = () => {
       setFormStatus({
         success: false,
         message: 'Registration is closed. The deadline has passed.'
+      });
+      return;
+    }
+
+    if (!turnstileToken) {
+      setFormStatus({
+        success: false,
+        message: 'Please complete the security verification.'
       });
       return;
     }
@@ -144,7 +169,8 @@ const ExhibitorRegistration: React.FC = () => {
         mobilePhone: formData.mobilePhone || undefined,
         boothRequirements: formData.boothRequirements || undefined,
         productsDescription: formData.productsDescription || undefined,
-        additionalComments: formData.additionalComments || undefined
+        additionalComments: formData.additionalComments || undefined,
+        captchaToken: turnstileToken
       };
 
       // Make the request to the Edge Function
@@ -652,11 +678,33 @@ const ExhibitorRegistration: React.FC = () => {
                 </div>
               </div>
 
+              {/* Turnstile CAPTCHA */}
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-secondary mb-6">Security Verification</h2>
+                <div className="flex flex-col items-center">
+                  <Turnstile
+                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'}
+                    onSuccess={handleTurnstileSuccess}
+                    onError={handleTurnstileError}
+                    onExpire={handleTurnstileExpire}
+                    options={{
+                      theme: 'light',
+                      size: 'normal',
+                      refreshExpired: 'auto'
+                    }}
+                  />
+                  {turnstileError && (
+                    <p className="mt-2 text-sm text-center text-red-600">Security verification failed. Please try again.</p>
+                  )}
+                  <p className="mt-2 text-xs text-gray-500 text-center">Please complete the security verification above before submitting.</p>
+                </div>
+              </div>
+
               {/* Submit Button */}
               <div>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !turnstileToken}
                   className="w-full inline-flex justify-center py-3 px-6 border border-transparent shadow-sm text-base font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
                 >
                   {isSubmitting ? (

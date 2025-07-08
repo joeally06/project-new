@@ -101,6 +101,37 @@ Deno.serve(async (req) => {
       throw new Error('Invalid request format: Unable to parse JSON');
     }
 
+    // Turnstile verification
+    const captchaToken = payload.captchaToken;
+    if (!captchaToken) {
+      console.error("Missing Turnstile token");
+      throw new Error('Turnstile verification failed. Please try again.');
+    }
+    
+    // Verify Turnstile token using the verify-turnstile Edge Function
+    try {
+      const turnstileVerifyRes = await fetch(
+        `${supabaseUrl}/functions/v1/verify-turnstile`,
+        {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ token: captchaToken })
+        }
+      );
+      
+      const turnstileVerifyData = await turnstileVerifyRes.json();
+      if (!turnstileVerifyData.success) {
+        console.error("Turnstile verification failed:", turnstileVerifyData);
+        throw new Error('Turnstile verification failed. Please try again.');
+      }
+    } catch (verifyError) {
+      console.error("Error during Turnstile verification:", verifyError);
+      throw new Error('Error verifying security token. Please try again.');
+    }
+
     // Validate required fields
     const requiredFields = [
       'first_name',

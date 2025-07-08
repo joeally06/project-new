@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { supabase } from '../lib/supabase';
 import { User, Mail, Phone, Building, Clock, Award, AlertCircle, X } from 'lucide-react';
 
@@ -39,6 +40,8 @@ export const HallOfFameNomination: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNominationPeriodOpen, setIsNominationPeriodOpen] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -112,6 +115,20 @@ export const HallOfFameNomination: React.FC = () => {
     }
   };
 
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError(false);
+  };
+
+  const handleTurnstileError = () => {
+    setTurnstileToken(null);
+    setTurnstileError(true);
+  };
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -127,6 +144,14 @@ export const HallOfFameNomination: React.FC = () => {
       setFormStatus({
         success: false,
         message: 'The nomination period is not currently open.'
+      });
+      return;
+    }
+
+    if (!turnstileToken) {
+      setFormStatus({
+        success: false,
+        message: 'Please complete the security verification.'
       });
       return;
     }
@@ -159,7 +184,8 @@ export const HallOfFameNomination: React.FC = () => {
             supervisor_last_name: formData.supervisorLastName,
             supervisor_email: formData.supervisorEmail,
             nominee_city: formData.nomineeCity,
-            region: formData.region
+            region: formData.region,
+            captchaToken: turnstileToken
           }),
         }
       );
@@ -552,11 +578,33 @@ export const HallOfFameNomination: React.FC = () => {
               </div>
             </div>
 
+            {/* Turnstile CAPTCHA */}
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold text-secondary mb-6">Security Verification</h2>
+              <div className="flex flex-col items-center">
+                <Turnstile
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'}
+                  onSuccess={handleTurnstileSuccess}
+                  onError={handleTurnstileError}
+                  onExpire={handleTurnstileExpire}
+                  options={{
+                    theme: 'light',
+                    size: 'normal',
+                    refreshExpired: 'auto'
+                  }}
+                />
+                {turnstileError && (
+                  <p className="mt-2 text-sm text-center text-red-600">Security verification failed. Please try again.</p>
+                )}
+                <p className="mt-2 text-xs text-gray-500 text-center">Please complete the security verification above before submitting.</p>
+              </div>
+            </div>
+
             {/* Submit Button */}
             <div className="mt-8">
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !turnstileToken}
                 className="w-full inline-flex justify-center py-3 px-6 border border-transparent shadow-sm text-base font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
               >
                 {isSubmitting ? (
