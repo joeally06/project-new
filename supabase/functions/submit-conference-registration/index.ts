@@ -80,6 +80,41 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Turnstile verification
+    const captchaToken = body.captchaToken;
+    if (!captchaToken) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Turnstile verification failed. Please try again.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Verify Turnstile token using the verify-turnstile Edge Function
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    if (!supabaseUrl) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server misconfiguration: Supabase URL missing.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    const turnstileVerifyRes = await fetch(`${supabaseUrl}/functions/v1/verify-turnstile`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+      },
+      body: JSON.stringify({ token: captchaToken })
+    });
+    
+    const turnstileVerifyData = await turnstileVerifyRes.json();
+    if (!turnstileVerifyData.success) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Turnstile verification failed. Please try again.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Rate limiting: max 3 submissions per hour per email
     const rateLimitKey = `conference_registration_${body.email}`;
     const { data: rateLimit } = await supabaseAdmin
