@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
           },
           body: JSON.stringify({ token: captchaToken })
         }
