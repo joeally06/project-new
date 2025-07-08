@@ -302,7 +302,7 @@ export const AdminHallOfFameSettings: React.FC = () => {
       const { error: deactivateError } = await supabase
         .from('hall_of_fame_settings')
         .update({ is_active: false })
-        .neq('id', 'no-match'); // Update all records
+        .gte('created_at', '1900-01-01'); // Update all records
 
       if (deactivateError) throw deactivateError;
 

@@ -121,7 +121,6 @@ Deno.serve(async (req) => {
           description: body.description,
           eligibility_criteria: body.eligibility_criteria,
           instructions: body.instructions,
-          is_active: true,
           updated_at: new Date().toISOString()
         });
 

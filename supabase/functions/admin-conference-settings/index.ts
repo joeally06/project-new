@@ -94,7 +94,6 @@ Deno.serve(async (req) => {
           fee: body.fee,
           payment_instructions: body.payment_instructions,
           description: body.description,
-          is_active: true,
           updated_at: new Date().toISOString()
         });
 
