@@ -100,6 +100,8 @@ Deno.serve(async (req) => {
       supabaseUrl,
       supabaseServiceKey,
       {
+      }
+    )
     let archiveId: string | null = null;
 
     // Archive current data based on type
