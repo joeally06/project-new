@@ -101,7 +101,41 @@ Deno.serve(async (req) => {
       supabaseServiceKey,
       {
       }
-    )
+    );
+
+    // Parse request body
+    const { type, settings }: RolloverRequest = await req.json();
+
+    if (!type || !settings) {
+      throw new Error('Missing required fields: type and settings');
+    }
+
+    // Get user from authorization header
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('Authorization header required');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
+    // Check if user is admin
+    const { data: userData, error: roleError } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (roleError || !userData || userData.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    userId = user.id;
+
     let archiveId: string | null = null;
 
     // Archive current data based on type
@@ -419,17 +453,9 @@ Deno.serve(async (req) => {
           .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
 
         if (insertError) throw insertError;
-        
-        
 
         break;
       }
-
-      default:
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid rollover type' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
 
       default:
         return new Response(
@@ -460,38 +486,6 @@ Deno.serve(async (req) => {
       }
     );
 
-    // Parse request body
-    const { type, settings }: RolloverRequest = await req.json();
-
-    if (!type || !settings) {
-      throw new Error('Missing required fields: type and settings');
-    }
-
-    // Get user from authorization header
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
-      throw new Error('Authorization header required');
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (userError || !user) {
-      throw new Error('Invalid or expired token');
-    }
-
-    // Check if user is admin
-    const { data: userData, error: roleError } = await supabaseAdmin
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (roleError || !userData || userData.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
-    userId = user.id;
   } catch (error) {
     console.error('Error:', error);
     
@@ -502,6 +496,8 @@ Deno.serve(async (req) => {
       // Try to log the failed rollover attempt
       const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        {
           auth: {
             autoRefreshToken: false,
             persistSession: false,
@@ -509,14 +505,12 @@ Deno.serve(async (req) => {
         }
       );
       
-      let type = null, settings = null;
-      try {
+      await logRolloverAction(supabaseAdmin, {
         action: 'rollover',
-        user_id: null,
+        user_id: userId,
         outcome: 'failure',
         error: errorMessage,
-      user_id: userId,
-        details: { settingsSummary: settings }
+        details: { error: errorMessage }
       });
     } catch (logError) {
       console.error('Failed to log error:', logError);
@@ -538,4 +532,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-        user_id: userId,
