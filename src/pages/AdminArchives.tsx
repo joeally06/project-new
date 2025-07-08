@@ -16,7 +16,7 @@ export const AdminArchives: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [archiveType, setArchiveType] = useState<'conference' | 'tech-conference' | 'hall-of-fame'>('conference');
+  const [archiveType, setArchiveType] = useState<'conference' | 'tech-conference' | 'hall-of-fame' | 'exhibitor' | 'student-scholarship'>('conference');
   const [archives, setArchives] = useState<Record<string, ArchiveItem[]>>({});
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -43,7 +43,9 @@ export const AdminArchives: React.FC = () => {
       const tables = {
         conference: 'conference_registrations_archive',
         'tech-conference': 'tech_conference_registrations_archive',
-        'hall-of-fame': 'hall_of_fame_nominations_archive'
+        'hall-of-fame': 'hall_of_fame_nominations_archive',
+        'exhibitor': 'exhibitor_registrations_archive',
+        'student-scholarship': 'student_scholarship_applications_archive'
       };
 
       const archiveData: Record<string, ArchiveItem[]> = {};
@@ -117,6 +119,10 @@ export const AdminArchives: React.FC = () => {
         return 'Tech Conference Registrations';
       case 'hall-of-fame':
         return 'Hall of Fame Nominations';
+      case 'exhibitor':
+        return 'Exhibitor Registrations';
+      case 'student-scholarship':
+        return 'Student Scholarship Applications';
       default:
         return '';
     }
@@ -154,7 +160,9 @@ export const AdminArchives: React.FC = () => {
             {[
               { id: 'conference', label: 'Conference' },
               { id: 'tech-conference', label: 'Tech Conference' },
-              { id: 'hall-of-fame', label: 'Hall of Fame' }
+              { id: 'hall-of-fame', label: 'Hall of Fame' },
+              { id: 'exhibitor', label: 'Exhibitor' },
+              { id: 'student-scholarship', label: 'Student Scholarship' }
             ].map((type) => (
               <button
                 key={type.id}
