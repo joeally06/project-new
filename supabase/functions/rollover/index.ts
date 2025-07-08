@@ -160,70 +160,6 @@ Deno.serve(async (req) => {
     // Extract year from settings
     const settingsYear = new Date(settings.start_date).getFullYear();
     
-    // Check for existing archive based on type
-    let existingArchiveQuery;
-    switch (type) {
-      case 'conference':
-        existingArchiveQuery = await supabaseAdmin
-          .from('conference_registrations_archive')
-          .select('archived_at')
-          .gte('archived_at', `${settingsYear}-01-01`)
-          .lte('archived_at', `${settingsYear}-12-31`)
-          .limit(1);
-        break;
-      case 'tech-conference':
-        existingArchiveQuery = await supabaseAdmin
-          .from('tech_conference_registrations_archive')
-          .select('archived_at')
-          .gte('archived_at', `${settingsYear}-01-01`)
-          .lte('archived_at', `${settingsYear}-12-31`)
-          .limit(1);
-        break;
-      case 'exhibitor':
-        existingArchiveQuery = await supabaseAdmin
-          .from('exhibitor_registrations_archive')
-          .select('archived_at')
-          .gte('archived_at', `${settingsYear}-01-01`)
-          .lte('archived_at', `${settingsYear}-12-31`)
-          .limit(1);
-        break;
-      case 'hall-of-fame':
-        existingArchiveQuery = await supabaseAdmin
-          .from('hall_of_fame_nominations_archive')
-          .select('archived_at')
-          .gte('archived_at', `${settingsYear}-01-01`)
-          .lte('archived_at', `${settingsYear}-12-31`)
-          .limit(1);
-        break;
-      case 'student-scholarship':
-        existingArchiveQuery = await supabaseAdmin
-          .from('student_scholarship_applications_archive')
-          .select('archived_at')
-          .gte('archived_at', `${settingsYear}-01-01`)
-          .lte('archived_at', `${settingsYear}-12-31`)
-          .limit(1);
-        break;
-      default:
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid rollover type' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-    }
-
-    if (existingArchiveQuery.error) {
-      throw existingArchiveQuery.error;
-    }
-
-    if (existingArchiveQuery.data && existingArchiveQuery.data.length > 0) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: `A rollover for year ${settingsYear} has already been performed` 
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     let archiveId: string | null = null;
 
     // Archive current data based on type
@@ -298,8 +234,7 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('conference_settings')
-          .update({ is_active: false })
-          .neq('id', settings.id);
+          .update({ is_active: false });
 
         if (updateError) throw updateError;
 
@@ -382,8 +317,7 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('tech_conference_settings')
-          .update({ is_active: false })
-          .neq('id', settings.id);
+          .update({ is_active: false });
 
         if (updateError) throw updateError;
 
@@ -435,8 +369,7 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('exhibitor_settings')
-          .update({ is_active: false })
-          .neq('id', settings.id);
+          .update({ is_active: false });
 
         if (updateError) throw updateError;
 
@@ -488,8 +421,7 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('hall_of_fame_settings')
-          .update({ is_active: false })
-          .neq('id', settings.id);
+          .update({ is_active: false });
 
         if (updateError) throw updateError;
 
@@ -541,8 +473,7 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('student_scholarship_settings')
-          .update({ is_active: false })
-          .neq('id', settings.id);
+          .update({ is_active: false });
 
         if (updateError) throw updateError;
 
@@ -551,9 +482,16 @@ Deno.serve(async (req) => {
           .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
+        
 
         break;
       }
+
+      default:
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid rollover type' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
     }
 
     await logRolloverAction(supabaseAdmin, {
