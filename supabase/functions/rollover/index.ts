@@ -80,8 +80,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  let userId = null;
-
   try {
     // Verify request method
     if (req.method !== 'POST') {
@@ -100,41 +98,131 @@ Deno.serve(async (req) => {
       supabaseUrl,
       supabaseServiceKey,
       {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       }
     );
 
-    // Parse request body
-    const { type, settings }: RolloverRequest = await req.json();
-
-    if (!type || !settings) {
-      throw new Error('Missing required fields: type and settings');
-    }
-
-    // Get user from authorization header
-    const authHeader = req.headers.get('authorization');
+    // Verify the requesting user is an admin
+    const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('Authorization header required');
+      return new Response(
+        JSON.stringify({ success: false, error: 'No authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     
-    if (userError || !user) {
-      throw new Error('Invalid or expired token');
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Check if user is admin
-    const { data: userData, error: roleError } = await supabaseAdmin
+    // Verify user is admin
+    const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (roleError || !userData || userData.role !== 'admin') {
-      throw new Error('Admin access required');
+    if (userError || !userData || userData.role !== 'admin') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized - Admin access required' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    userId = user.id;
+    // Get request body
+    const requestBody = await req.json();
+    const { type, settings }: RolloverRequest = requestBody;
+
+    if (!type || !settings) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing required fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate settings
+    if (!settings.id || !settings.start_date || !settings.end_date) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing required settings fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Extract year from settings
+    const settingsYear = new Date(settings.start_date).getFullYear();
+    
+    // Check for existing archive based on type
+    let existingArchiveQuery;
+    switch (type) {
+      case 'conference':
+        existingArchiveQuery = await supabaseAdmin
+          .from('conference_registrations_archive')
+          .select('archived_at')
+          .gte('archived_at', `${settingsYear}-01-01`)
+          .lte('archived_at', `${settingsYear}-12-31`)
+          .limit(1);
+        break;
+      case 'tech-conference':
+        existingArchiveQuery = await supabaseAdmin
+          .from('tech_conference_registrations_archive')
+          .select('archived_at')
+          .gte('archived_at', `${settingsYear}-01-01`)
+          .lte('archived_at', `${settingsYear}-12-31`)
+          .limit(1);
+        break;
+      case 'exhibitor':
+        existingArchiveQuery = await supabaseAdmin
+          .from('exhibitor_registrations_archive')
+          .select('archived_at')
+          .gte('archived_at', `${settingsYear}-01-01`)
+          .lte('archived_at', `${settingsYear}-12-31`)
+          .limit(1);
+        break;
+      case 'hall-of-fame':
+        existingArchiveQuery = await supabaseAdmin
+          .from('hall_of_fame_nominations_archive')
+          .select('archived_at')
+          .gte('archived_at', `${settingsYear}-01-01`)
+          .lte('archived_at', `${settingsYear}-12-31`)
+          .limit(1);
+        break;
+      case 'student-scholarship':
+        existingArchiveQuery = await supabaseAdmin
+          .from('student_scholarship_applications_archive')
+          .select('archived_at')
+          .gte('archived_at', `${settingsYear}-01-01`)
+          .lte('archived_at', `${settingsYear}-12-31`)
+          .limit(1);
+        break;
+      default:
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid rollover type' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+
+    if (existingArchiveQuery.error) {
+      throw existingArchiveQuery.error;
+    }
+
+    if (existingArchiveQuery.data && existingArchiveQuery.data.length > 0) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `A rollover for year ${settingsYear} has already been performed` 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     let archiveId: string | null = null;
 
@@ -210,12 +298,14 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('conference_settings')
-          .update({ is_active: false });
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
         if (updateError) throw updateError;
 
         const { error: insertError } = await supabaseAdmin
           .from('conference_settings')
-          .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
@@ -292,12 +382,14 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('tech_conference_settings')
-          .update({ is_active: false });
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
         if (updateError) throw updateError;
 
         const { error: insertError } = await supabaseAdmin
           .from('tech_conference_settings')
-          .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
@@ -343,12 +435,14 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('exhibitor_settings')
-          .update({ is_active: false });
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
         if (updateError) throw updateError;
 
         const { error: insertError } = await supabaseAdmin
           .from('exhibitor_settings')
-          .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
@@ -394,12 +488,14 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('hall_of_fame_settings')
-          .update({ is_active: false });
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
         if (updateError) throw updateError;
 
         const { error: insertError } = await supabaseAdmin
           .from('hall_of_fame_settings')
-          .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
@@ -445,23 +541,19 @@ Deno.serve(async (req) => {
         // Update settings
         const { error: updateError } = await supabaseAdmin
           .from('student_scholarship_settings')
-          .update({ is_active: false });
+          .update({ is_active: false })
+          .neq('id', settings.id);
+
         if (updateError) throw updateError;
 
         const { error: insertError } = await supabaseAdmin
           .from('student_scholarship_settings')
-          .upsert({ ...settings, is_active: true, updated_at: new Date().toISOString() });
+          .upsert({ ...settings, is_active: true });
 
         if (insertError) throw insertError;
 
         break;
       }
-
-      default:
-        return new Response(
-          JSON.stringify({ success: false, error: 'Invalid rollover type' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
     }
 
     await logRolloverAction(supabaseAdmin, {
@@ -505,12 +597,20 @@ Deno.serve(async (req) => {
         }
       );
       
+      let type = null, settings = null;
+      try {
+        const body = await req.json();
+        type = body.type || null;
+        settings = body.settings || null;
+      } catch {}
+      
       await logRolloverAction(supabaseAdmin, {
         action: 'rollover',
-        user_id: userId,
+        user_id: null,
         outcome: 'failure',
         error: errorMessage,
-        details: { error: errorMessage }
+        type,
+        details: { settingsSummary: settings }
       });
     } catch (logError) {
       console.error('Failed to log error:', logError);
@@ -519,8 +619,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        details: error instanceof Error ? error.stack : undefined
+        error: sanitizeError(error),
       }),
       { 
         status: 400,
