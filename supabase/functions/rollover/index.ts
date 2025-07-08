@@ -460,6 +460,38 @@ Deno.serve(async (req) => {
       }
     );
 
+    // Parse request body
+    const { type, settings }: RolloverRequest = await req.json();
+
+    if (!type || !settings) {
+      throw new Error('Missing required fields: type and settings');
+    }
+
+    // Get user from authorization header
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('Authorization header required');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
+    // Check if user is admin
+    const { data: userData, error: roleError } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (roleError || !userData || userData.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    userId = user.id;
   } catch (error) {
     console.error('Error:', error);
     
@@ -470,8 +502,6 @@ Deno.serve(async (req) => {
       // Try to log the failed rollover attempt
       const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-        {
           auth: {
             autoRefreshToken: false,
             persistSession: false,
@@ -481,17 +511,11 @@ Deno.serve(async (req) => {
       
       let type = null, settings = null;
       try {
-        const body = await req.json();
-        type = body.type || null;
-        settings = body.settings || null;
-      } catch {}
-      
-      await logRolloverAction(supabaseAdmin, {
         action: 'rollover',
         user_id: null,
         outcome: 'failure',
         error: errorMessage,
-        type,
+      user_id: userId,
         details: { settingsSummary: settings }
       });
     } catch (logError) {
@@ -514,3 +538,4 @@ Deno.serve(async (req) => {
     );
   }
 });
+        user_id: userId,
