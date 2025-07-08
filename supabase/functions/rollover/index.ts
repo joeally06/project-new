@@ -489,32 +489,8 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     
-    // Create detailed error information
-    let errorMessage = 'Unknown error occurred';
-    let errorDetails = null;
-    
-    if (error instanceof Error) {
-      errorMessage = error.message;
-      errorDetails = {
-        name: error.name,
-        stack: error.stack,
-        cause: error.cause
-      };
-    } else if (typeof error === 'object') {
-      // Handle non-Error objects
-      try {
-        errorMessage = 'Object error: ' + JSON.stringify(error);
-        errorDetails = error;
-      } catch (jsonError) {
-        errorMessage = 'Unserializable error object';
-        errorDetails = { stringified: String(error) };
-      }
-    } else if (typeof error === 'string') {
-      errorMessage = error;
-    } else {
-      errorMessage = `Unexpected error type: ${typeof error}`;
-      errorDetails = { value: String(error) };
-    }
+    // Create a sanitized error message
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
     
     try {
       // Try to log the failed rollover attempt
@@ -534,12 +510,7 @@ Deno.serve(async (req) => {
         user_id: userId,
         outcome: 'failure',
         error: errorMessage,
-        details: { 
-          error: errorMessage,
-          errorType: typeof error,
-          isError: error instanceof Error,
-          details: errorDetails
-        }
+        details: { error: errorMessage }
       });
     } catch (logError) {
       console.error('Failed to log error:', logError);
@@ -548,10 +519,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: errorMessage,
-        details: errorDetails,
-        errorType: typeof error,
-        isError: error instanceof Error
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        details: error instanceof Error ? error.stack : undefined
       }),
       { 
         status: 400,
